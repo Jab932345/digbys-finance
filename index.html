@@ -563,32 +563,83 @@ textarea{resize:vertical;min-height:70px}
 
 <!-- BANK IMPORT -->
 <div id="page-import" class="hidden">
-  <div class="page-header"><h2>Bank CSV Import</h2><p>Starling Bank export format · AI auto-categorisation</p></div>
+  <div class="page-header"><h2>Bank Import</h2><p>Starling Bank CSV · rules-based categorisation</p></div>
   <div class="page-body">
-    <div id="drop-zone" class="drop-zone" onclick="document.getElementById('csv-file').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="handleDrop(event)">
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="1.5" style="display:block;margin:0 auto 12px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-      <strong style="font-size:15px;color:var(--ink2)">Drop your Starling CSV here</strong>
-      <p>or click to browse · CSV format: Date, Description, Amount, Balance</p>
-    </div>
-    <input type="file" id="csv-file" accept=".csv" style="display:none" onchange="handleCSVFile(event)">
 
-    <div id="import-preview" class="import-preview hidden">
-      <div class="section-head" style="margin-top:24px">
-        <h3>Preview — AI Auto-categorised</h3>
-        <div style="display:flex;gap:8px">
-          <span class="ai-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> AI categorised</span>
-          <button class="btn btn-primary btn-sm" onclick="importApproved()">Import All →</button>
+    <!-- TABS -->
+    <div class="tab-row">
+      <button class="tab-btn active" onclick="showImportTab('upload',this)">Upload CSV</button>
+      <button class="tab-btn" onclick="showImportTab('rules',this)">Categorisation Rules</button>
+      <button class="tab-btn" onclick="showImportTab('streams',this)">Income &amp; Cost Streams</button>
+    </div>
+
+    <!-- UPLOAD TAB -->
+    <div id="import-tab-upload">
+      <div id="drop-zone" class="drop-zone" onclick="document.getElementById('csv-file').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="handleDrop(event)">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="1.5" style="display:block;margin:0 auto 12px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <strong style="font-size:15px;color:var(--ink2)">Drop your Starling CSV here</strong>
+        <p>or click to browse · Starling format: Date, Counter Party, Reference, Type, Amount (GBP), Balance (GBP), Spending Category, Notes</p>
+      </div>
+      <input type="file" id="csv-file" accept=".csv" style="display:none" onchange="handleCSVFile(event)">
+
+      <div id="import-preview" class="import-preview hidden">
+        <div class="section-head" style="margin-top:24px">
+          <h3 id="import-preview-title">Preview</h3>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span id="import-skip-count" style="font-size:12px;color:var(--ink3)"></span>
+            <button class="btn btn-secondary btn-sm" onclick="toggleSkipped()">Show skipped</button>
+            <button class="btn btn-primary btn-sm" onclick="importApproved()">Import All →</button>
+          </div>
         </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Date</th><th>Counter Party</th><th>Reference</th><th>Amount</th><th>Type</th><th>Category / Stream</th><th>Skip?</th></tr></thead>
+              <tbody id="import-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RULES TAB -->
+    <div id="import-tab-rules" class="hidden">
+      <div class="card" style="margin-bottom:16px;background:var(--navy3);border-color:var(--navy3)">
+        <p style="font-size:13px;color:var(--navy2)">Rules match on <strong>Counter Party name</strong> (the person/business). Add a rule for anyone who always maps to the same category. Rules run top-to-bottom — first match wins. <strong>Skip</strong> means the transaction is excluded from import entirely (e.g. owner capital injections).</p>
+      </div>
+      <div class="actions-row">
+        <button class="btn btn-primary" onclick="openRuleModal()">+ Add Rule</button>
       </div>
       <div class="card" style="padding:0;overflow:hidden">
-        <div class="tbl-wrap">
-          <table>
-            <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Category</th><th>Stream / Type</th><th>Landowner?</th><th>Override</th></tr></thead>
-            <tbody id="import-tbody"></tbody>
-          </table>
+        <table>
+          <thead><tr><th>Counter Party (contains)</th><th>Direction</th><th>Action</th><th>Maps to</th><th>Landowner?</th><th></th></tr></thead>
+          <tbody id="rules-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- STREAMS TAB -->
+    <div id="import-tab-streams" class="hidden">
+      <div class="grid-2" style="gap:20px">
+        <div>
+          <div class="section-head"><h3>Income Streams</h3><button class="btn btn-primary btn-sm" onclick="addStream('income')">+ Add</button></div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <table><thead><tr><th>Stream Name</th><th></th></tr></thead>
+            <tbody id="income-streams-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="section-head"><h3>Expense Categories</h3><button class="btn btn-primary btn-sm" onclick="addStream('expense')">+ Add</button></div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <table><thead><tr><th>Category Name</th><th></th></tr></thead>
+            <tbody id="expense-streams-tbody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
+
   </div>
 </div>
 
@@ -896,6 +947,51 @@ textarea{resize:vertical;min-height:70px}
   </div>
 </div>
 
+<!-- Rule Modal -->
+<div class="modal-overlay hidden" id="rule-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-head"><h3>Categorisation Rule</h3><button class="btn-link" onclick="closeModals()">✕</button></div>
+    <div class="modal-body">
+      <div style="font-size:13px;color:var(--ink3);margin-bottom:14px">When a transaction's Counter Party <strong>contains</strong> this text, apply the rule automatically.</div>
+      <div class="form-row">
+        <div><label class="field-label">Counter Party contains (case-insensitive)</label><input type="text" id="rule-match" placeholder="e.g. James Brierley, Produce Warriors, Nisbets"></div>
+      </div>
+      <div class="form-row cols-2">
+        <div>
+          <label class="field-label">Direction</label>
+          <select id="rule-dir">
+            <option value="any">Any (in or out)</option>
+            <option value="in">Money in (income)</option>
+            <option value="out">Money out (expense)</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label">Action</label>
+          <select id="rule-action" onchange="updateRuleActionUI()">
+            <option value="skip">Skip (exclude from import)</option>
+            <option value="income">Assign as Income</option>
+            <option value="expense">Assign as Expense</option>
+          </select>
+        </div>
+      </div>
+      <div id="rule-income-group" class="form-row hidden">
+        <div><label class="field-label">Income Stream</label><select id="rule-income-stream"></select></div>
+      </div>
+      <div id="rule-expense-group" class="form-row hidden">
+        <div><label class="field-label">Expense Category</label><select id="rule-expense-cat"></select></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+        <input type="checkbox" id="rule-landowner" style="width:16px;height:16px">
+        <label for="rule-landowner" style="font-size:13px">Flag as Landowner related party</label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModals()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveRule()">Save Rule</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // =========================================================
 // DATA STORE
@@ -1049,6 +1145,10 @@ function openIncomeModal(){
   document.getElementById('income-modal').classList.remove('hidden');
   document.getElementById('inc-date').value=new Date().toISOString().slice(0,10);
   document.getElementById('inc-chef-warn').classList.add('hidden');
+  // Dynamic stream list
+  const sel=document.getElementById('inc-stream');
+  const cur=sel.value;
+  sel.innerHTML=getIncomeStreams().map(s=>`<option ${s===cur?'selected':''}>${s}</option>`).join('');
 }
 document.getElementById('inc-stream').addEventListener('change',function(){
   document.getElementById('inc-chef-warn').classList.toggle('hidden',this.value!=='Chef for Hire');
@@ -1071,7 +1171,10 @@ function saveIncome(){
 function deleteIncome(id){if(confirm('Delete this entry?')){data.income=data.income.filter(i=>i.id!==id);save();renderIncomeTable();refreshDashboard();}}
 
 function renderIncomeTable(){
-  const filterStream=document.getElementById('income-filter-stream')?.value||'';
+  // Refresh filter dropdown with current streams
+  const filterEl=document.getElementById('income-filter-stream');
+  if(filterEl){const cur=filterEl.value;filterEl.innerHTML='<option value="">All Streams</option>'+getIncomeStreams().map(s=>`<option ${s===cur?'selected':''}>${s}</option>`).join('');}
+  const filterStream=filterEl?.value||'';
   const filterMonth=document.getElementById('income-filter-month')?.value||'';
   let items=data.income.filter(tyFilter);
   if(filterStream) items=items.filter(i=>i.stream===filterStream);
@@ -1163,6 +1266,10 @@ const PHASE2_CATS=['Facility Rent','Shared Utilities','Insurance'];
 function openExpenseModal(){
   document.getElementById('expense-modal').classList.remove('hidden');
   document.getElementById('exp-date').value=new Date().toISOString().slice(0,10);
+  // Dynamic category list
+  const sel=document.getElementById('exp-cat');
+  const cur=sel.value;
+  sel.innerHTML=getExpenseCats().map(s=>`<option ${s===cur?'selected':''}>${s}</option>`).join('');
 }
 
 function checkExpCat(){
@@ -1318,97 +1425,331 @@ function renderEquipTable(){
 }
 
 // =========================================================
-// CSV IMPORT
+// STREAMS & CATEGORIES (user-editable)
 // =========================================================
+const DEFAULT_INCOME_STREAMS=['Event Catering','Butchery Contract','Dividend','Private Chef','Direct Food Sales','Chef for Hire','Capital Injection','Other'];
+const DEFAULT_EXPENSE_CATS=['Food & Drink','Equipment Purchase','Staff Costs','Packaging & Consumables','Phone / Broadband','Event-Specific Costs','Facility Rent','Shared Utilities','Insurance','Repairs & Maintenance','Professional Services','Admin','Other'];
+
+function getIncomeStreams(){return data.incomeStreams||DEFAULT_INCOME_STREAMS;}
+function getExpenseCats(){return data.expenseCats||DEFAULT_EXPENSE_CATS;}
+
+function addStream(type){
+  const name=prompt(type==='income'?'New income stream name:':'New expense category name:');
+  if(!name||!name.trim()) return;
+  if(type==='income'){
+    if(!data.incomeStreams) data.incomeStreams=[...DEFAULT_INCOME_STREAMS];
+    if(!data.incomeStreams.includes(name.trim())) data.incomeStreams.push(name.trim());
+  } else {
+    if(!data.expenseCats) data.expenseCats=[...DEFAULT_EXPENSE_CATS];
+    if(!data.expenseCats.includes(name.trim())) data.expenseCats.push(name.trim());
+  }
+  save();renderStreamsTab();
+}
+
+function deleteStream(type,name){
+  if(!confirm('Remove "'+name+'"?')) return;
+  if(type==='income') data.incomeStreams=(data.incomeStreams||[...DEFAULT_INCOME_STREAMS]).filter(s=>s!==name);
+  else data.expenseCats=(data.expenseCats||[...DEFAULT_EXPENSE_CATS]).filter(s=>s!==name);
+  save();renderStreamsTab();
+}
+
+function renderStreamsTab(){
+  const is=getIncomeStreams();
+  const ec=getExpenseCats();
+  const itbody=document.getElementById('income-streams-tbody');
+  const etbody=document.getElementById('expense-streams-tbody');
+  if(itbody) itbody.innerHTML=is.map(s=>`<tr><td>${s}</td><td style="text-align:right"><button class="btn-link" style="color:var(--red2)" onclick="deleteStream('income','${s.replace(/'/g,"\\'")}')">Remove</button></td></tr>`).join('');
+  if(etbody) etbody.innerHTML=ec.map(s=>`<tr><td>${s}</td><td style="text-align:right"><button class="btn-link" style="color:var(--red2)" onclick="deleteStream('expense','${s.replace(/'/g,"\\'")}')">Remove</button></td></tr>`).join('');
+}
+
+// =========================================================
+// RULES ENGINE
+// =========================================================
+// Rule shape: {id, match:string, dir:'any'|'in'|'out', action:'skip'|'income'|'expense', stream:string, cat:string, landowner:bool}
+
+function getRules(){return data.rules||[];}
+
+function openRuleModal(existingId){
+  const modal=document.getElementById('rule-modal');
+  modal.classList.remove('hidden');
+  // Populate stream/cat dropdowns
+  const is=document.getElementById('rule-income-stream');
+  const ec=document.getElementById('rule-expense-cat');
+  is.innerHTML=getIncomeStreams().map(s=>`<option>${s}</option>`).join('');
+  ec.innerHTML=getExpenseCats().map(s=>`<option>${s}</option>`).join('');
+  if(existingId){
+    const r=getRules().find(r=>r.id===existingId);
+    if(r){
+      document.getElementById('rule-match').value=r.match;
+      document.getElementById('rule-dir').value=r.dir;
+      document.getElementById('rule-action').value=r.action;
+      document.getElementById('rule-landowner').checked=r.landowner||false;
+      if(r.stream) is.value=r.stream;
+      if(r.cat) ec.value=r.cat;
+      modal._editId=existingId;
+    }
+  } else {
+    document.getElementById('rule-match').value='';
+    document.getElementById('rule-dir').value='any';
+    document.getElementById('rule-action').value='skip';
+    document.getElementById('rule-landowner').checked=false;
+    modal._editId=null;
+  }
+  updateRuleActionUI();
+}
+
+function updateRuleActionUI(){
+  const action=document.getElementById('rule-action').value;
+  document.getElementById('rule-income-group').classList.toggle('hidden',action!=='income');
+  document.getElementById('rule-expense-group').classList.toggle('hidden',action!=='expense');
+}
+
+function saveRule(){
+  const match=document.getElementById('rule-match').value.trim();
+  if(!match){alert('Enter a Counter Party to match');return;}
+  const rule={
+    id:uid(),
+    match,
+    dir:document.getElementById('rule-dir').value,
+    action:document.getElementById('rule-action').value,
+    stream:document.getElementById('rule-income-stream').value,
+    cat:document.getElementById('rule-expense-cat').value,
+    landowner:document.getElementById('rule-landowner').checked
+  };
+  if(!data.rules) data.rules=[];
+  const modal=document.getElementById('rule-modal');
+  if(modal._editId){
+    const idx=data.rules.findIndex(r=>r.id===modal._editId);
+    if(idx>=0){rule.id=modal._editId;data.rules[idx]=rule;}
+  } else {
+    // Built-in rules first, then user rules; just append
+    data.rules.push(rule);
+  }
+  save();closeModals();renderRulesTable();
+}
+
+function deleteRule(id){
+  if(!confirm('Delete this rule?')) return;
+  data.rules=(data.rules||[]).filter(r=>r.id!==id);
+  save();renderRulesTable();
+}
+
+function renderRulesTable(){
+  const tbody=document.getElementById('rules-tbody');
+  if(!tbody) return;
+  const rules=getRules();
+  if(!rules.length){tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--ink3);padding:24px">No rules yet. Add rules to auto-categorise recurring transactions.</td></tr>';return;}
+  tbody.innerHTML=rules.map(r=>`<tr>
+    <td><strong>${r.match}</strong></td>
+    <td><span class="badge badge-gray">${r.dir==='any'?'Any':r.dir==='in'?'↓ In':'↑ Out'}</span></td>
+    <td><span class="badge ${r.action==='skip'?'badge-red':r.action==='income'?'badge-green':'badge-navy'}">${r.action==='skip'?'Skip':r.action==='income'?'Income':'Expense'}</span></td>
+    <td>${r.action==='income'?r.stream:r.action==='expense'?r.cat:'—'}</td>
+    <td>${r.landowner?'<span class="badge badge-amber">Landowner</span>':'—'}</td>
+    <td style="display:flex;gap:8px">
+      <button class="btn-link" onclick="openRuleModal('${r.id}')">Edit</button>
+      <button class="btn-link" style="color:var(--red2)" onclick="deleteRule('${r.id}')">✕</button>
+    </td>
+  </tr>`).join('');
+}
+
+function applyRules(counterParty,ref,amount){
+  // amount: positive=income, negative=expense
+  const dir=amount>0?'in':'out';
+  const rules=getRules();
+  for(const r of rules){
+    const matchText=(counterParty+' '+ref).toLowerCase();
+    if(!matchText.includes(r.match.toLowerCase())) continue;
+    if(r.dir!=='any'&&r.dir!==dir) continue;
+    return r; // first match wins
+  }
+  return null;
+}
+
+// =========================================================
+// STARLING CSV PARSER
+// =========================================================
+// Columns: Date, Counter Party, Reference, Type, Amount (GBP), Balance (GBP), Spending Category, Notes
+// Dates are DD/MM/YYYY
+
+function parseStarlingDate(str){
+  // DD/MM/YYYY → YYYY-MM-DD
+  if(!str) return '';
+  const p=str.trim().split('/');
+  if(p.length===3) return `${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`;
+  return str;
+}
+
+function parseCSVLine(line){
+  // Handle quoted fields with commas inside
+  const result=[];let cur='';let inQ=false;
+  for(let i=0;i<line.length;i++){
+    const c=line[i];
+    if(c==='"'){inQ=!inQ;}
+    else if(c===','&&!inQ){result.push(cur.trim());cur='';}
+    else cur+=c;
+  }
+  result.push(cur.trim());
+  return result;
+}
+
 let importRows=[];
+let showSkipped=false;
+
 function handleDrop(e){e.preventDefault();document.getElementById('drop-zone').classList.remove('drag-over');const f=e.dataTransfer.files[0];if(f)processCSV(f);}
 function handleCSVFile(e){const f=e.target.files[0];if(f)processCSV(f);}
 
 function processCSV(file){
   const reader=new FileReader();
   reader.onload=e=>{
-    const lines=e.target.result.split('\n').filter(l=>l.trim());
+    const lines=e.target.result.split('\n').map(l=>l.trim()).filter(l=>l);
     importRows=[];
-    for(let i=1;i<lines.length;i++){
-      const cols=lines[i].split(',');
-      if(cols.length<3) continue;
-      const date=cols[0]?.trim();
-      const desc=cols[1]?.trim();
-      const rawAmt=parseFloat(cols[2]?.replace(/[£"\s]/g,''));
-      if(isNaN(rawAmt)) continue;
-      const type=rawAmt>0?'income':'expense';
-      const cat=autoCategory(desc,type);
-      const isLandowner=/landowner|estate|farm|rent|butch/i.test(desc);
-      importRows.push({date,desc,amount:Math.abs(rawAmt),type,cat,landowner:isLandowner,stream:autoStream(desc)});
+    // Find header row
+    let startIdx=0;
+    for(let i=0;i<Math.min(5,lines.length);i++){
+      if(lines[i].toLowerCase().includes('date')&&lines[i].toLowerCase().includes('amount')){startIdx=i+1;break;}
+    }
+    for(let i=startIdx;i<lines.length;i++){
+      const cols=parseCSVLine(lines[i]);
+      if(cols.length<5) continue;
+      // Starling: Date, Counter Party, Reference, Type, Amount (GBP), Balance (GBP), Spending Category, Notes
+      const rawDate=cols[0]||'';
+      const counterParty=cols[1]||'';
+      const reference=cols[2]||'';
+      const txType=cols[3]||'';
+      const rawAmt=parseFloat((cols[4]||'').replace(/[£,\s"]/g,''));
+      const starlingCat=(cols[6]||'').trim();
+      if(isNaN(rawAmt)||rawAmt===0) continue;
+      const date=parseStarlingDate(rawDate);
+      const amount=rawAmt; // keep sign: positive=in, negative=out
+      // Apply rules
+      const rule=applyRules(counterParty,reference,amount);
+      let skip=false,incomeStream='',expenseCat='',landowner=false,assignedType=amount>0?'income':'expense';
+      if(rule){
+        if(rule.action==='skip'){skip=true;}
+        else if(rule.action==='income'){assignedType='income';incomeStream=rule.stream;landowner=rule.landowner;}
+        else if(rule.action==='expense'){assignedType='expense';expenseCat=rule.cat;landowner=rule.landowner;}
+      }
+      // Fallback categorisation from Starling's own category
+      if(!skip&&!incomeStream&&!expenseCat){
+        const sc=starlingCat.toUpperCase();
+        if(amount>0){
+          incomeStream=fallbackStream(counterParty,reference,sc);
+        } else {
+          expenseCat=fallbackCat(counterParty,reference,sc);
+        }
+      }
+      importRows.push({
+        date,counterParty,reference,txType,
+        amount:Math.abs(amount),
+        dir:amount>0?'in':'out',
+        assignedType,incomeStream,expenseCat,landowner,skip,
+        ruleApplied:rule?rule.match:null
+      });
     }
     renderImportPreview();
     document.getElementById('import-preview').classList.remove('hidden');
+    document.getElementById('import-preview-title').textContent=`Preview — ${importRows.filter(r=>!r.skip).length} transactions`;
+    const skipped=importRows.filter(r=>r.skip).length;
+    document.getElementById('import-skip-count').textContent=skipped?skipped+' skipped by rules':'';
   };
   reader.readAsText(file);
 }
 
-function autoCategory(desc,type){
-  const d=desc.toLowerCase();
-  if(/asda|tesco|waitrose|sainsbury|lidl|aldi|wholesale|butcher|farm|ingredient|food/i.test(d)) return'Ingredients & Food Supplies';
-  if(/packaging|box|bag|wrap|label|container/i.test(d)) return'Packaging & Consumables';
-  if(/mileage|fuel|petrol|diesel|parking/i.test(d)) return'Motor';
-  if(/phone|mobile|broadband|bt |sky |vodafone|o2 /i.test(d)) return'Phone / Broadband';
-  if(/rent|rates|facility/i.test(d)) return'Facility Rent';
-  if(/insurance|cover|liability/i.test(d)) return'Insurance';
-  if(/equipment|knife|tool|pan|pot|mixer|oven/i.test(d)) return'Equipment Purchase';
-  if(/staff|labour|wages|pay/i.test(d)) return'Staff Costs';
-  return type==='income'?'Income':'Other';
+function fallbackStream(cp,ref,sc){
+  const t=(cp+' '+ref).toLowerCase();
+  if(/wedding|wake|celebrat|party|event|tasting|supper|pop.?up/i.test(t)) return'Event Catering';
+  if(/butch/i.test(t)) return'Butchery Contract';
+  if(/market|stall/i.test(t)) return'Direct Food Sales';
+  if(/dividend/i.test(t)) return'Dividend';
+  if(/wage|salary/i.test(t)) return'Chef for Hire';
+  return'Other';
 }
 
-function autoStream(desc){
-  if(/wedding|wake|celebrat|event|party/i.test(desc)) return'Event Catering';
-  if(/butch|meat|landowner/i.test(desc)) return'Butchery Contract';
-  if(/market|stall|direct/i.test(desc)) return'Direct Food Sales';
-  if(/dividend|div /i.test(desc)) return'Dividend';
+function fallbackCat(cp,ref,sc){
+  const t=(cp+' '+ref).toLowerCase();
+  if(sc==='FOOD_AND_DRINK'||/lidl|aldi|tesco|sainsbury|waitrose|asda|co.op|booker|produce|wild meat|wholesale|ingredients/i.test(t)) return'Food & Drink';
+  if(sc==='EQUIPMENT'||/nisbets|amazon|vitamix|sonos|buzz catering|dusk|eti |w11|gastronomy/i.test(t)) return'Equipment Purchase';
+  if(sc==='STAFF'||/wage|shift|tips/i.test(t)) return'Staff Costs';
+  if(sc==='WORKPLACE'||/village hall|facility|rent|rates/i.test(t)) return'Facility Rent';
+  if(sc==='ADMIN'||/squarespace|insurance|simply business/i.test(t)) return'Admin';
+  if(sc==='PROFESSIONAL_SERVICES') return'Professional Services';
+  if(sc==='REPAIRS_AND_MAINTENANCE') return'Repairs & Maintenance';
   return'Other';
+}
+
+function toggleSkipped(){
+  showSkipped=!showSkipped;
+  const btn=document.querySelector('[onclick="toggleSkipped()"]');
+  if(btn) btn.textContent=showSkipped?'Hide skipped':'Show skipped';
+  renderImportPreview();
 }
 
 function renderImportPreview(){
   const tbody=document.getElementById('import-tbody');
-  tbody.innerHTML=importRows.map((r,idx)=>`
-    <tr>
-      <td>${r.date}</td>
-      <td style="max-width:200px;font-size:12.5px">${r.desc}</td>
-      <td class="mono" style="color:${r.type==='income'?'var(--green2)':'var(--red2)'}">${r.type==='income'?'+':'-'}${fmt(r.amount)}</td>
-      <td><span class="badge badge-gray">${r.cat}</span></td>
+  if(!tbody) return;
+  const rows=showSkipped?importRows:importRows.filter(r=>!r.skip);
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--ink3);padding:32px">No transactions to show.</td></tr>';return;}
+  const incStreams=getIncomeStreams();
+  const expCats=getExpenseCats();
+  tbody.innerHTML=rows.map((r,idx)=>{
+    const realIdx=importRows.indexOf(r);
+    const rowStyle=r.skip?'opacity:0.4;background:var(--cream2)':'';
+    const amtColor=r.dir==='in'?'var(--green2)':'var(--red2)';
+    const amtSign=r.dir==='in'?'+':'−';
+    const ruleTag=r.ruleApplied?`<span class="badge badge-navy" style="font-size:10px;margin-left:4px">rule</span>`:'';
+    const catSelect=r.assignedType==='income'
+      ?`<select onchange="importRows[${realIdx}].incomeStream=this.value" style="font-size:12px;padding:4px 6px;width:100%">${incStreams.map(s=>`<option ${r.incomeStream===s?'selected':''}>${s}</option>`).join('')}</select>`
+      :r.skip?'<span style="color:var(--ink3);font-size:12px">Skipped</span>'
+      :`<select onchange="importRows[${realIdx}].expenseCat=this.value" style="font-size:12px;padding:4px 6px;width:100%">${expCats.map(s=>`<option ${r.expenseCat===s?'selected':''}>${s}</option>`).join('')}</select>`;
+    return`<tr style="${rowStyle}">
+      <td style="white-space:nowrap;font-size:12px">${r.date}</td>
+      <td style="font-size:12.5px;max-width:140px">${r.counterParty}${ruleTag}</td>
+      <td style="font-size:11px;color:var(--ink3);max-width:100px">${r.reference}</td>
+      <td class="mono" style="color:${amtColor};white-space:nowrap">${amtSign}£${r.amount.toFixed(2)}</td>
       <td>
-        ${r.type==='income'?`<select onchange="importRows[${idx}].stream=this.value" style="font-size:12px;padding:4px 6px">
-          <option ${r.stream==='Event Catering'?'selected':''}>Event Catering</option>
-          <option ${r.stream==='Butchery Contract'?'selected':''}>Butchery Contract</option>
-          <option ${r.stream==='Dividend'?'selected':''}>Dividend</option>
-          <option ${r.stream==='Private Chef'?'selected':''}>Private Chef</option>
-          <option ${r.stream==='Direct Food Sales'?'selected':''}>Direct Food Sales</option>
-          <option ${r.stream==='Chef for Hire'?'selected':''}>Chef for Hire</option>
-          <option ${r.stream==='Other'?'selected':''}>Other</option>
-        </select>`:'—'}
-      </td>
-      <td>${r.landowner?'<span class="badge badge-amber">⚑ Landowner</span>':'—'}</td>
-      <td>
-        <select onchange="importRows[${idx}].cat=this.value" style="font-size:12px;padding:4px 6px">
-          ${['Ingredients & Food Supplies','Packaging & Consumables','Equipment Purchase','Phone / Broadband','Event-Specific Costs','Staff Costs','Facility Rent','Shared Utilities','Insurance','Motor','Other','Income'].map(c=>`<option ${r.cat===c?'selected':''}>${c}</option>`).join('')}
+        <select onchange="importRows[${realIdx}].assignedType=this.value;importRows[${realIdx}].skip=false;renderImportPreview()" style="font-size:12px;padding:4px 6px">
+          <option value="income" ${r.assignedType==='income'&&!r.skip?'selected':''}>Income</option>
+          <option value="expense" ${r.assignedType==='expense'&&!r.skip?'selected':''}>Expense</option>
+          <option value="skip" ${r.skip?'selected':''}>Skip</option>
         </select>
       </td>
-    </tr>`).join('');
+      <td style="min-width:160px">${catSelect}</td>
+      <td>
+        <input type="checkbox" ${r.landowner?'checked':''} onchange="importRows[${realIdx}].landowner=this.checked" title="Landowner related party" style="width:14px;height:14px">
+      </td>
+    </tr>`;
+  }).join('');
 }
 
 function importApproved(){
-  importRows.forEach(r=>{
-    if(r.type==='income'){
-      data.income.push({id:uid(),date:r.date,amount:r.amount,stream:r.stream,desc:r.desc,ref:'CSV',landowner:r.landowner});
+  let incCount=0;let expCount=0;
+  importRows.filter(r=>!r.skip).forEach(r=>{
+    if(r.assignedType==='income'){
+      data.income.push({id:uid(),date:r.date,amount:r.amount,stream:r.incomeStream||'Other',desc:r.counterParty+(r.reference?' – '+r.reference:''),ref:'CSV',landowner:r.landowner});
+      incCount++;
     } else {
-      data.expenses.push({id:uid(),date:r.date,amount:r.amount,cat:r.cat,desc:r.desc,ref:'CSV',landowner:r.landowner});
+      data.expenses.push({id:uid(),date:r.date,amount:r.amount,cat:r.expenseCat||'Other',desc:r.counterParty+(r.reference?' – '+r.reference:''),ref:'CSV',landowner:r.landowner});
+      expCount++;
     }
   });
   save();
   document.getElementById('import-preview').classList.add('hidden');
   importRows=[];
-  alert(data.income.length+' income & '+data.expenses.length+' expense records total after import.');
+  alert(`Imported: ${incCount} income entries, ${expCount} expense entries.`);
   refreshDashboard();
+}
+
+// =========================================================
+// IMPORT TAB SWITCHING
+// =========================================================
+function showImportTab(tab,btn){
+  ['upload','rules','streams'].forEach(t=>{
+    const el=document.getElementById('import-tab-'+t);
+    if(el) el.classList.toggle('hidden',t!==tab);
+  });
+  document.querySelectorAll('#page-import .tab-btn').forEach(b=>b.classList.toggle('active',b===btn));
+  if(tab==='rules') renderRulesTable();
+  if(tab==='streams') renderStreamsTab();
 }
 
 // =========================================================
@@ -1669,6 +2010,16 @@ function refreshAll(){
 // INIT
 // =========================================================
 load();
+// Seed default rules if none exist
+if(!data.rules||data.rules.length===0){
+  data.rules=[
+    {id:uid(),match:'James Brierley',dir:'in',action:'skip',stream:'Capital Injection',cat:'',landowner:false},
+    {id:uid(),match:'BRIERLEY J',dir:'in',action:'skip',stream:'Capital Injection',cat:'',landowner:false},
+    {id:uid(),match:'Produce Warriors',dir:'out',action:'expense',stream:'',cat:'Food & Drink',landowner:false},
+    {id:uid(),match:'James Brierley',dir:'out',action:'skip',stream:'',cat:'',landowner:false},
+  ];
+  save();
+}
 // Set defaults
 document.getElementById('home-method').value=data.homeMethod||'flat';
 if(data.homeHours) document.getElementById('home-hours').value=data.homeHours;
