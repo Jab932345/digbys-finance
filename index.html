@@ -1363,6 +1363,7 @@ function showPage(p){
   if(p==='equipment') renderEquipTable();
   if(p==='reports') refreshReports();
   if(p==='jobcodes') renderJobCodesPage();
+  if(p==='import'){setSyncRangeTaxYear();checkSyncConnection();}
 }
 
 // =========================================================
@@ -2953,6 +2954,8 @@ populateJobCodeSelects();
 setTaxYear(data.taxYear||'2526');
 calcHomeWorking();
 showPage('dashboard');
+// Auto-check Starling connection in background on every page load
+setTimeout(checkSyncConnection, 1500);
 </script>
 </body>
 </html>
