@@ -2296,16 +2296,20 @@ async function checkSyncConnection(){
   const iconEl=document.getElementById('sync-conn-icon');
   const badgeEl=document.getElementById('sync-status-badge');
   try{
-    // Ping the proxy with a tiny date range to test connectivity
-    const testFrom=new Date();testFrom.setDate(testFrom.getDate()-1);
-    const res=await fetch(`/api/starling?from=${testFrom.toISOString().slice(0,10)}&to=${testFrom.toISOString().slice(0,10)}`);
+    // Call without date params — proxy uses tax year range by default
+    const res=await fetch('/api/starling');
     if(res.ok){
       const d=await res.json();
       syncConnected=true;
-      if(titleEl) titleEl.textContent='Connected — '+( d.accountName||'Starling Account');
-      if(subEl) subEl.textContent='Auto-sync ready · '+d.currency+' account';
+      if(titleEl) titleEl.textContent='Connected — '+(d.accountName||'Starling Account');
+      if(subEl) subEl.textContent='Auto-sync ready · '+d.currency+' account · '+d.count+' transactions this tax year';
       if(iconEl){iconEl.style.background='var(--green3)';iconEl.innerHTML='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>';}
       if(badgeEl){badgeEl.style.display='flex';badgeEl.style.background='var(--green3)';badgeEl.style.color='var(--green)';badgeEl.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Connected';}
+      // Load transactions immediately — no need to press Sync Now
+      processTransactions(d.transactions);
+      data.lastSync=new Date().toISOString();save();
+      const lastEl2=document.getElementById('sync-last-time');
+      if(lastEl2) lastEl2.textContent=new Date().toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
     } else {
       throw new Error('HTTP '+res.status);
     }
