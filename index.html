@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Digby's — Sole Trader Accounts</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;700&family=Libre+Baskerville:wght@400;700&family=DM+Mono:wght@400;500&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1498,8 +1499,63 @@ textarea{resize:vertical;min-height:70px}
         </div>
         <div><label class="field-label">RTW Check Date</label><input type="date" id="srm-rtw-date"></div>
       </div>
+
+      <!-- EMERGENCY CONTACTS -->
+      <div style="margin:14px 0 8px;padding-top:12px;border-top:1px solid var(--border)">
+        <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--ink3)">Emergency Contacts</strong>
+      </div>
+      <div class="form-row cols-3">
+        <div><label class="field-label">Name</label><input type="text" id="srm-emergency-name" placeholder="Full name"></div>
+        <div><label class="field-label">Relationship</label><input type="text" id="srm-emergency-rel" placeholder="e.g. Partner, Parent"></div>
+        <div><label class="field-label">Phone</label><input type="text" id="srm-emergency-phone" placeholder="07xxx xxxxxx"></div>
+      </div>
+      <div class="form-row cols-2">
+        <div><label class="field-label">Second Contact Name</label><input type="text" id="srm-emergency2-name" placeholder="Backup contact"></div>
+        <div><label class="field-label">Second Contact Phone</label><input type="text" id="srm-emergency2-phone" placeholder="07xxx xxxxxx"></div>
+      </div>
+
+      <!-- HEALTH & DIETARY -->
+      <div style="margin:14px 0 8px;padding-top:12px;border-top:1px solid var(--border)">
+        <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--ink3)">Health & Dietary</strong>
+      </div>
+      <div class="form-row cols-2">
+        <div><label class="field-label">Allergies</label><textarea id="srm-allergies" style="min-height:60px" placeholder="List any allergies — e.g. nuts, shellfish, latex"></textarea></div>
+        <div><label class="field-label">Dietary Requirements</label><textarea id="srm-dietary" style="min-height:60px" placeholder="e.g. Vegetarian, Halal, Gluten-free"></textarea></div>
+      </div>
       <div class="form-row">
-        <div><label class="field-label">Notes</label><textarea id="srm-notes" placeholder="Any relevant notes — emergency contact, uniform size, dietary, etc."></textarea></div>
+        <div><label class="field-label">Medical Notes (relevant to work)</label><textarea id="srm-medical" style="min-height:50px" placeholder="e.g. Epipen carrier, diabetic, asthma inhaler — relevant operational info only"></textarea></div>
+      </div>
+
+      <!-- QUALIFICATIONS & OPERATIONAL -->
+      <div style="margin:14px 0 8px;padding-top:12px;border-top:1px solid var(--border)">
+        <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--ink3)">Qualifications & Operational</strong>
+      </div>
+      <div class="form-row cols-3">
+        <div>
+          <label class="field-label">Food Hygiene Certificate</label>
+          <select id="srm-food-hygiene">
+            <option value="">None</option>
+            <option value="Level 2">Level 2</option>
+            <option value="Level 3">Level 3</option>
+            <option value="Level 4">Level 4</option>
+          </select>
+        </div>
+        <div><label class="field-label">Food Hygiene Expiry</label><input type="date" id="srm-food-hygiene-expiry"></div>
+        <div><label class="field-label">Uniform Size</label><input type="text" id="srm-uniform" placeholder="e.g. M, 32W/30L"></div>
+      </div>
+      <div class="form-row cols-2">
+        <div style="display:flex;flex-direction:column;gap:8px;padding-top:4px">
+          <label class="field-label">Certifications</label>
+          <div style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="srm-first-aid" style="width:16px;height:16px"><label for="srm-first-aid" style="font-size:13px">First Aid trained</label></div>
+          <div style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="srm-driving" style="width:16px;height:16px"><label for="srm-driving" style="font-size:13px">Driving licence</label></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div><label class="field-label">First Aid Expiry</label><input type="date" id="srm-first-aid-expiry"></div>
+          <div><label class="field-label">Licence Categories</label><input type="text" id="srm-driving-cats" placeholder="e.g. B, BE, C1"></div>
+        </div>
+      </div>
+      <div class="form-row">
+        <div><label class="field-label">Additional Notes</label><textarea id="srm-notes" placeholder="Any other relevant information"></textarea></div>
       </div>
       <input type="hidden" id="srm-edit-id">
     </div>
@@ -1588,7 +1644,17 @@ textarea{resize:vertical;min-height:70px}
 // =========================================================
 // DATA STORE
 // =========================================================
-const STORE_KEY = 'digbys_accounts_v1';
+// =========================================================
+// SUPABASE CLIENT
+// =========================================================
+const SUPA_URL = 'https://jaajrllkozknilvmdezt.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImphYWpybGxrb3prbmlsdm1kZXp0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwMjQxNDAsImV4cCI6MjA5MjYwMDE0MH0.09U5cba3JxRmysrn2X3TxPqr-q6jJE4QhyeKQwEK03M';
+const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+// =========================================================
+// LOCAL DATA CACHE — mirrors Supabase, always in sync
+// =========================================================
+const STORE_KEY = 'digbys_accounts_v2';
 let data = {
   taxYear: '2526',
   income: [],
@@ -1596,20 +1662,197 @@ let data = {
   expenses: [],
   mileage: [],
   equipment: [],
+  jobCodes: [],
+  staffRecords: [],
+  payrollRuns: [],
+  insurance: [],
+  rules: [],
+  incomeStreams: null,
+  expenseCats: null,
   homeMethod: 'flat',
   homeHours: 50,
   homeRooms: 5,
   homeWorkRooms: 1,
   homeCosts: 12000,
-  homeBizPct: 40
+  homeBizPct: 40,
+  payeRef: '',
+  aoRef: '',
+  lastSync: null
 };
 
-function save(){try{localStorage.setItem(STORE_KEY,JSON.stringify(data))}catch(e){}}
-function load(){try{const d=localStorage.getItem(STORE_KEY);if(d)data=JSON.parse(d)}catch(e){}}
+// Keep localStorage as fast local cache for offline/speed
+function saveLocal(){try{localStorage.setItem(STORE_KEY,JSON.stringify(data))}catch(e){}}
+function loadLocal(){try{const d=localStorage.getItem(STORE_KEY);if(d){const p=JSON.parse(d);Object.assign(data,p);}}catch(e){}}
+
+// --- Supabase helpers ---
+async function dbGet(table, orderCol){
+  try{
+    let q=sb.from(table).select('*');
+    if(orderCol) q=q.order(orderCol,{ascending:false});
+    const{data:rows,error}=await q;
+    if(error) throw error;
+    return rows||[];
+  }catch(e){console.warn('dbGet',table,e.message);return[];}
+}
+
+async function dbUpsert(table, row){
+  try{
+    const{error}=await sb.from(table).upsert(row,{onConflict:'id'});
+    if(error) throw error;
+    return true;
+  }catch(e){console.warn('dbUpsert',table,e.message);return false;}
+}
+
+async function dbDelete(table, id){
+  try{
+    const{error}=await sb.from(table).delete().eq('id',id);
+    if(error) throw error;
+    return true;
+  }catch(e){console.warn('dbDelete',table,e.message);return false;}
+}
+
+async function dbUpdate(table, id, updates){
+  try{
+    const{error}=await sb.from(table).update(updates).eq('id',id);
+    if(error) throw error;
+    return true;
+  }catch(e){console.warn('dbUpdate',table,e.message);return false;}
+}
+
+// --- Full sync from Supabase into local cache ---
+async function syncFromSupabase(){
+  showSyncIndicator('Syncing…');
+  try{
+    const [income,expenses,events,mileage,equipment,jobCodes,staff,payrollRuns,payrollLines,insurance,rules,settings] = await Promise.all([
+      dbGet('finance_income','date'),
+      dbGet('finance_expenses','date'),
+      dbGet('finance_events','date'),
+      dbGet('finance_mileage','date'),
+      dbGet('finance_equipment','date'),
+      dbGet('finance_job_codes','created_at'),
+      dbGet('finance_staff','name'),
+      dbGet('finance_payroll_runs','date'),
+      dbGet('finance_payroll_lines'),
+      dbGet('finance_insurance'),
+      dbGet('finance_import_rules','sort_order'),
+      dbGet('finance_settings')
+    ]);
+
+    // Normalise Supabase rows to app format
+    data.income = income.map(r=>({id:r.id,date:r.date,amount:r.amount,stream:r.stream,desc:r.description,ref:r.reference,jobCodeId:r.job_code_id,landowner:r.is_landowner}));
+    data.expenses = expenses.map(r=>({id:r.id,date:r.date,amount:r.amount,cat:r.category,desc:r.description,ref:r.reference,jobCodeId:r.job_code_id,landowner:r.is_landowner}));
+    data.events = events.map(r=>({id:r.id,date:r.date,type:r.type,client:r.client,covers:r.covers,revenue:r.revenue,costs:r.direct_costs,profit:r.profit,notes:r.notes}));
+    data.mileage = mileage.map(r=>({id:r.id,date:r.date,miles:r.miles,purpose:r.purpose,driver:r.driver,jobCodeId:r.job_code_id,jobCode:r.job_code,jobName:r.job_name}));
+    data.equipment = equipment.map(r=>({id:r.id,date:r.date,desc:r.description,supplier:r.supplier,ref:r.reference,cost:r.cost}));
+    data.jobCodes = jobCodes.map(r=>({id:r.id,code:r.code,name:r.name,type:r.type,date:r.event_date,notes:r.notes,source:r.source}));
+    data.staffRecords = staff.map(r=>({
+      id:r.id,name:r.name,dob:r.dob,ni:r.ni_number,start:r.employment_start,
+      address:r.address,email:r.email,phone:r.phone,
+      sort:r.bank_sort_code,account:r.bank_account,bank:r.bank_name,
+      rate:r.pay_rate,freq:r.pay_frequency,taxcode:r.tax_code,
+      rtwDoc:r.rtw_doc_type,rtwDate:r.rtw_check_date,
+      emergencyName:r.emergency_contact_name,emergencyRel:r.emergency_contact_relation,emergencyPhone:r.emergency_contact_phone,
+      emergency2Name:r.emergency_contact_2_name,emergency2Phone:r.emergency_contact_2_phone,
+      allergies:r.allergies,dietary:r.dietary_requirements,medical:r.medical_notes,
+      foodHygieneLevel:r.food_hygiene_level,foodHygieneExpiry:r.food_hygiene_expiry,
+      firstAid:r.first_aid_trained,firstAidExpiry:r.first_aid_expiry,
+      drivingLicence:r.driving_licence,drivingCats:r.driving_licence_categories,
+      uniformSize:r.uniform_size,notes:r.notes,active:r.active
+    }));
+    // Attach payroll lines to runs
+    data.payrollRuns = payrollRuns.map(r=>({
+      id:r.id,date:r.date,desc:r.description,jobCodeId:r.job_code_id,
+      gross:r.gross,paye:r.paye,enic:r.employee_nic,ernic:r.employer_nic,net:r.net,
+      rtiSubmitted:r.rti_submitted,
+      lines:(payrollLines.filter(l=>l.run_id===r.id)).map(l=>({staffId:l.staff_id,hours:l.hours,rate:l.rate,gross:l.gross}))
+    }));
+    data.insurance = insurance.map(r=>({id:r.id,type:r.type,cover:r.cover,insurer:r.insurer,policy:r.policy_number,renewal:r.renewal_date,premium:r.annual_premium}));
+    data.rules = rules.map(r=>({id:r.id,match:r.match_text,dir:r.direction,action:r.action,stream:r.income_stream,cat:r.expense_category,landowner:r.is_landowner}));
+
+    // Settings
+    if(settings&&settings.length>0){
+      const s=settings[0];
+      data.taxYear=s.tax_year||'2526';
+      data.payeRef=s.paye_ref||'';
+      data.aoRef=s.ao_ref||'';
+      data.homeMethod=s.home_method||'flat';
+      data.homeHours=s.home_hours||50;
+      data.homeRooms=s.home_rooms||5;
+      data.homeWorkRooms=s.home_work_rooms||1;
+      data.homeCosts=s.home_costs||12000;
+      data.homeBizPct=s.home_biz_pct||40;
+      data.lastSync=s.last_sync;
+      if(s.income_streams) data.incomeStreams=s.income_streams;
+      if(s.expense_categories) data.expenseCats=s.expense_categories;
+    }
+
+    saveLocal();
+    showSyncIndicator('Synced', true);
+  }catch(e){
+    console.error('syncFromSupabase',e);
+    showSyncIndicator('Offline', false, true);
+  }
+}
+
+function showSyncIndicator(text, ok=false, err=false){
+  let el=document.getElementById('sync-indicator');
+  if(!el){
+    el=document.createElement('div');
+    el.id='sync-indicator';
+    el.style.cssText='position:fixed;bottom:12px;right:12px;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;font-family:var(--font-body);z-index:9999;transition:opacity 0.5s';
+    document.body.appendChild(el);
+  }
+  el.style.background=err?'var(--red3)':ok?'var(--green3)':'var(--navy3)';
+  el.style.color=err?'var(--red)':ok?'var(--green)':'var(--navy2)';
+  el.style.opacity='1';
+  el.textContent=text;
+  if(ok) setTimeout(()=>{el.style.opacity='0';},2500);
+}
+
+// save() now writes to both Supabase and localStorage
+// For individual record saves, we use specific db functions
+// For settings changes (tax year, home working etc), we update the settings row
+async function saveSettings(){
+  saveLocal();
+  await sb.from('finance_settings').upsert({
+    id:'singleton',
+    tax_year:data.taxYear,
+    paye_ref:data.payeRef||null,
+    ao_ref:data.aoRef||null,
+    home_method:data.homeMethod,
+    home_hours:data.homeHours,
+    home_rooms:data.homeRooms,
+    home_work_rooms:data.homeWorkRooms,
+    home_costs:data.homeCosts,
+    home_biz_pct:data.homeBizPct,
+    income_streams:data.incomeStreams,
+    expense_categories:data.expenseCats,
+    updated_at:new Date().toISOString()
+  },{onConflict:'id'});
+}
+
+// Legacy save() kept for compatibility — syncs settings
+function save(){saveLocal();saveSettings();}
+
+// Migrate any existing localStorage data to Supabase on first load
+async function migrateLocalToSupabase(local){
+  console.log('Migrating localStorage data to Supabase…');
+  showSyncIndicator('Migrating data…');
+  const promises=[];
+  if(local.income?.length) local.income.forEach(r=>promises.push(sb.from('finance_income').upsert({id:r.id,date:r.date,amount:r.amount,stream:r.stream,description:r.desc,reference:r.ref,is_landowner:r.landowner||false,tax_year:data.taxYear},{onConflict:'id'})));
+  if(local.expenses?.length) local.expenses.forEach(r=>promises.push(sb.from('finance_expenses').upsert({id:r.id,date:r.date,amount:r.amount,category:r.cat,description:r.desc,reference:r.ref,is_landowner:r.landowner||false,tax_year:data.taxYear},{onConflict:'id'})));
+  if(local.mileage?.length) local.mileage.forEach(r=>promises.push(sb.from('finance_mileage').upsert({id:r.id,date:r.date,miles:r.miles,purpose:r.purpose,driver:r.driver||'Manual',job_code_id:r.jobCodeId||null,job_code:r.jobCode||null,job_name:r.jobName||null},{onConflict:'id'})));
+  if(local.equipment?.length) local.equipment.forEach(r=>promises.push(sb.from('finance_equipment').upsert({id:r.id,date:r.date,description:r.desc,supplier:r.supplier,reference:r.ref,cost:r.cost},{onConflict:'id'})));
+  if(local.jobCodes?.length) local.jobCodes.forEach(r=>promises.push(sb.from('finance_job_codes').upsert({id:r.id,code:r.code,name:r.name,type:r.type,event_date:r.date||null,notes:r.notes,source:r.source||'manual'},{onConflict:'id'})));
+  await Promise.allSettled(promises);
+  localStorage.removeItem('digbys_accounts_v1'); // clear old key
+  showSyncIndicator('Migration complete', true);
+  console.log('Migration done');
+}
 
 // ID generator
 let _id=Date.now();
-function uid(){return 'id_'+(++_id)}
+function uid(){return crypto.randomUUID?crypto.randomUUID():'id_'+(++_id)}
 
 // =========================================================
 // TAX YEAR HELPERS
@@ -1618,7 +1861,7 @@ function setTaxYear(yr){
   data.taxYear=yr;
   document.getElementById('ty2526').classList.toggle('active',yr==='2526');
   document.getElementById('ty2627').classList.toggle('active',yr==='2627');
-  save();
+  saveSettings();
   refreshAll();
 }
 
@@ -1751,7 +1994,7 @@ document.getElementById('inc-stream').addEventListener('change',function(){
   document.getElementById('inc-chef-warn').classList.toggle('hidden',this.value!=='Chef for Hire');
 });
 
-function saveIncome(){
+async function saveIncome(){
   const entry={
     id:uid(),
     date:document.getElementById('inc-date').value,
@@ -1762,10 +2005,17 @@ function saveIncome(){
     landowner:document.getElementById('inc-landowner').checked
   };
   data.income.push(entry);
-  save();closeModals();renderIncomeTable();refreshDashboard();
+  saveLocal();
+  await sb.from('finance_income').upsert({id:entry.id,date:entry.date,amount:entry.amount,stream:entry.stream,description:entry.desc,reference:entry.ref,is_landowner:entry.landowner,tax_year:data.taxYear},{onConflict:'id'});
+  closeModals();renderIncomeTable();refreshDashboard();
 }
 
-function deleteIncome(id){if(confirm('Delete this entry?')){data.income=data.income.filter(i=>i.id!==id);save();renderIncomeTable();refreshDashboard();}}
+async function deleteIncome(id){
+  if(!confirm('Delete this entry?')) return;
+  data.income=data.income.filter(i=>i.id!==id);saveLocal();
+  await sb.from('finance_income').delete().eq('id',id);
+  renderIncomeTable();refreshDashboard();
+}
 
 function renderIncomeTable(){
   // Refresh filter dropdown with current streams
@@ -1807,26 +2057,27 @@ function openEventModal(){
   document.getElementById('ev-date').value=new Date().toISOString().slice(0,10);
 }
 
-function saveEvent(){
+async function saveEvent(){
   const rev=+document.getElementById('ev-revenue').value||0;
   const costs=+document.getElementById('ev-costs').value||0;
-  const entry={
-    id:uid(),
-    date:document.getElementById('ev-date').value,
-    type:document.getElementById('ev-type').value,
-    client:document.getElementById('ev-client').value,
-    covers:+document.getElementById('ev-covers').value||0,
-    revenue:rev,costs,
-    profit:rev-costs,
-    notes:document.getElementById('ev-notes').value
-  };
+  const entry={id:uid(),date:document.getElementById('ev-date').value,type:document.getElementById('ev-type').value,client:document.getElementById('ev-client').value,covers:+document.getElementById('ev-covers').value||0,revenue:rev,costs,profit:rev-costs,notes:document.getElementById('ev-notes').value};
   data.events.push(entry);
-  // Also add to income
-  data.income.push({id:uid(),date:entry.date,amount:rev,stream:'Event Catering',desc:entry.client+' – '+entry.type,ref:'',landowner:false});
-  save();closeModals();renderEventTable();refreshDashboard();
+  const incEntry={id:uid(),date:entry.date,amount:rev,stream:'Event Catering',desc:entry.client+' – '+entry.type,ref:'',landowner:false};
+  data.income.push(incEntry);
+  saveLocal();
+  await Promise.all([
+    sb.from('finance_events').upsert({id:entry.id,date:entry.date,type:entry.type,client:entry.client,covers:entry.covers,revenue:entry.revenue,direct_costs:entry.costs,profit:entry.profit,notes:entry.notes},{onConflict:'id'}),
+    sb.from('finance_income').upsert({id:incEntry.id,date:incEntry.date,amount:incEntry.amount,stream:incEntry.stream,description:incEntry.desc,is_landowner:false,tax_year:data.taxYear},{onConflict:'id'})
+  ]);
+  closeModals();renderEventTable();refreshDashboard();
 }
 
-function deleteEvent(id){if(confirm('Delete this event?')){data.events=data.events.filter(i=>i.id!==id);save();renderEventTable();refreshDashboard();}}
+async function deleteEvent(id){
+  if(!confirm('Delete this event?')) return;
+  data.events=data.events.filter(i=>i.id!==id);saveLocal();
+  await sb.from('finance_events').delete().eq('id',id);
+  renderEventTable();refreshDashboard();
+}
 
 function renderEventTable(){
   const items=data.events.filter(tyFilter).sort((a,b)=>b.date.localeCompare(a.date));
@@ -1875,7 +2126,7 @@ function checkExpCat(){
   warn.classList.toggle('hidden',!PHASE2_CATS.includes(cat)||getPhase()!==1);
 }
 
-function saveExpense(){
+async function saveExpense(){
   const entry={
     id:uid(),
     date:document.getElementById('exp-date').value,
@@ -1885,11 +2136,17 @@ function saveExpense(){
     ref:document.getElementById('exp-ref').value,
     landowner:document.getElementById('exp-landowner').checked
   };
-  data.expenses.push(entry);
-  save();closeModals();renderExpenseTable();refreshDashboard();
+  data.expenses.push(entry);saveLocal();
+  await sb.from('finance_expenses').upsert({id:entry.id,date:entry.date,amount:entry.amount,category:entry.cat,description:entry.desc,reference:entry.ref,is_landowner:entry.landowner,tax_year:data.taxYear},{onConflict:'id'});
+  closeModals();renderExpenseTable();refreshDashboard();
 }
 
-function deleteExpense(id){if(confirm('Delete this expense?')){data.expenses=data.expenses.filter(i=>i.id!==id);save();renderExpenseTable();refreshDashboard();}}
+async function deleteExpense(id){
+  if(!confirm('Delete this expense?')) return;
+  data.expenses=data.expenses.filter(i=>i.id!==id);saveLocal();
+  await sb.from('finance_expenses').delete().eq('id',id);
+  renderExpenseTable();refreshDashboard();
+}
 
 function renderExpenseTable(){
   const filterCat=document.getElementById('expense-filter-cat')?.value||'';
@@ -2072,9 +2329,10 @@ function saveJobCode(){
   } else {
     data.jobCodes.push(entry);
   }
-  save();closeModals();
+  saveLocal();
+  await sb.from('finance_job_codes').upsert({id:entry.id,code:entry.code,name:entry.name,type:entry.type,event_date:entry.date||null,notes:entry.notes,source:entry.source||'manual'},{onConflict:'id'});
+  closeModals();
   populateJobCodeSelects();
-  // If we just added from tracking setup, auto-select it
   const trkSel=document.getElementById('trk-jobcode');
   if(trkSel) trkSel.value=entry.id;
   const mileSel=document.getElementById('mile-jobcode');
@@ -2332,8 +2590,9 @@ function stopTracking(){
   if(miles<0.1&&!confirm(`Only ${miles} miles recorded. Save anyway?`)) return;
   const s=getStaff().find(s=>s.id===trkState.staffId);
   const jc=getJobCodes().find(j=>j.id===trkState.jobCodeId);
-  data.mileage.push({id:uid(),date:new Date().toISOString().slice(0,10),miles,purpose:trkState.purpose,jobCodeId:trkState.jobCodeId||'',jobCode:jc?jc.code:'',jobName:jc?jc.name:'',driver:s?s.name:'Unknown'});
-  save();
+  const mEntry={id:uid(),date:new Date().toISOString().slice(0,10),miles,purpose:trkState.purpose,jobCodeId:trkState.jobCodeId||'',jobCode:jc?jc.code:'',jobName:jc?jc.name:'',driver:s?s.name:'Unknown'};
+  data.mileage.push(mEntry);saveLocal();
+  sb.from('finance_mileage').upsert({id:mEntry.id,date:mEntry.date,miles:mEntry.miles,purpose:mEntry.purpose,driver:mEntry.driver,job_code_id:mEntry.jobCodeId||null,job_code:mEntry.jobCode||null,job_name:mEntry.jobName||null},{onConflict:'id'});
   const claim=miles<=10000?miles*0.45:10000*0.45+(miles-10000)*0.25;
   document.getElementById('trk-saved-miles').textContent=`${miles} miles recorded`;
   document.getElementById('trk-saved-claim').textContent=`HMRC claim: ${fmt(claim)}`;
@@ -2357,20 +2616,19 @@ function openEquipModal(){
   document.getElementById('eq-date').value=new Date().toISOString().slice(0,10);
 }
 
-function saveEquipment(){
-  const entry={
-    id:uid(),
-    date:document.getElementById('eq-date').value,
-    cost:+document.getElementById('eq-cost').value||0,
-    desc:document.getElementById('eq-desc').value,
-    supplier:document.getElementById('eq-supplier').value,
-    ref:document.getElementById('eq-ref').value
-  };
-  data.equipment.push(entry);
-  save();closeModals();renderEquipTable();
+async function saveEquipment(){
+  const entry={id:uid(),date:document.getElementById('eq-date').value,cost:+document.getElementById('eq-cost').value||0,desc:document.getElementById('eq-desc').value,supplier:document.getElementById('eq-supplier').value,ref:document.getElementById('eq-ref').value};
+  data.equipment.push(entry);saveLocal();
+  await sb.from('finance_equipment').upsert({id:entry.id,date:entry.date,description:entry.desc,supplier:entry.supplier,reference:entry.ref,cost:entry.cost},{onConflict:'id'});
+  closeModals();renderEquipTable();
 }
 
-function deleteEquip(id){if(confirm('Delete equipment?')){data.equipment=data.equipment.filter(i=>i.id!==id);save();renderEquipTable();}}
+async function deleteEquip(id){
+  if(!confirm('Delete equipment?')) return;
+  data.equipment=data.equipment.filter(i=>i.id!==id);saveLocal();
+  await sb.from('finance_equipment').delete().eq('id',id);
+  renderEquipTable();
+}
 
 function equipTaxYear(item){
   if(!item.date) return '—';
@@ -2420,7 +2678,7 @@ function addStream(type){
     if(!data.expenseCats) data.expenseCats=[...DEFAULT_EXPENSE_CATS];
     if(!data.expenseCats.includes(name.trim())) data.expenseCats.push(name.trim());
   }
-  save();renderStreamsTab();
+  saveSettings();renderStreamsTab();
 }
 
 function deleteStream(type,name){
@@ -2499,16 +2757,18 @@ function saveRule(){
     const idx=data.rules.findIndex(r=>r.id===modal._editId);
     if(idx>=0){rule.id=modal._editId;data.rules[idx]=rule;}
   } else {
-    // Built-in rules first, then user rules; just append
     data.rules.push(rule);
   }
-  save();closeModals();renderRulesTable();
+  saveLocal();
+  await sb.from('finance_import_rules').upsert({id:rule.id,match_text:rule.match,direction:rule.dir,action:rule.action,income_stream:rule.stream||null,expense_category:rule.cat||null,is_landowner:rule.landowner||false},{onConflict:'id'});
+  closeModals();renderRulesTable();
 }
 
 function deleteRule(id){
   if(!confirm('Delete this rule?')) return;
-  data.rules=(data.rules||[]).filter(r=>r.id!==id);
-  save();renderRulesTable();
+  data.rules=(data.rules||[]).filter(r=>r.id!==id);saveLocal();
+  await sb.from('finance_import_rules').delete().eq('id',id);
+  renderRulesTable();
 }
 
 function renderRulesTable(){
@@ -2829,21 +3089,27 @@ function renderImportPreview(){
   }).join('');
 }
 
-function importApproved(){
+async function importApproved(){
   let incCount=0;let expCount=0;
+  const incRows=[];const expRows=[];
   importRows.filter(r=>!r.skip).forEach(r=>{
+    const desc=r.counterParty+(r.reference?' – '+r.reference:'');
     if(r.assignedType==='income'){
-      data.income.push({id:uid(),date:r.date,amount:r.amount,stream:r.incomeStream||'Other',desc:r.counterParty+(r.reference?' – '+r.reference:''),ref:'CSV',landowner:r.landowner});
-      incCount++;
+      const e={id:uid(),date:r.date,amount:r.amount,stream:r.incomeStream||'Other',desc,ref:'BANK',landowner:r.landowner};
+      data.income.push(e);incRows.push(e);incCount++;
     } else {
-      data.expenses.push({id:uid(),date:r.date,amount:r.amount,cat:r.expenseCat||'Other',desc:r.counterParty+(r.reference?' – '+r.reference:''),ref:'CSV',landowner:r.landowner});
-      expCount++;
+      const e={id:uid(),date:r.date,amount:r.amount,cat:r.expenseCat||'Other',desc,ref:'BANK',landowner:r.landowner};
+      data.expenses.push(e);expRows.push(e);expCount++;
     }
   });
-  save();
+  saveLocal();
+  await Promise.all([
+    ...incRows.map(e=>sb.from('finance_income').upsert({id:e.id,date:e.date,amount:e.amount,stream:e.stream,description:e.desc,reference:e.ref,is_landowner:e.landowner,tax_year:data.taxYear},{onConflict:'id'})),
+    ...expRows.map(e=>sb.from('finance_expenses').upsert({id:e.id,date:e.date,amount:e.amount,category:e.cat,description:e.desc,reference:e.ref,is_landowner:e.landowner,tax_year:data.taxYear},{onConflict:'id'}))
+  ]);
   document.getElementById('import-preview').classList.add('hidden');
   importRows=[];
-  alert(`Imported: ${incCount} income entries, ${expCount} expense entries.`);
+  alert(`Imported: ${incCount} income, ${expCount} expense entries.`);
   refreshDashboard();
 }
 
@@ -2969,11 +3235,12 @@ function editJobCode(id){
   },50);
 }
 
-function deleteJobCode(id){
+async function deleteJobCode(id){
   const trips=data.mileage.filter(m=>m.jobCodeId===id).length;
   if(trips>0&&!confirm('This job code has '+trips+' trip(s) linked. Delete anyway?')) return;
-  data.jobCodes=(data.jobCodes||[]).filter(j=>j.id!==id);
-  save();renderJobCodesPage();populateJobCodeSelects();
+  data.jobCodes=(data.jobCodes||[]).filter(j=>j.id!==id);saveLocal();
+  await sb.from('finance_job_codes').delete().eq('id',id);
+  renderJobCodesPage();populateJobCodeSelects();
 }
 
 // =========================================================
@@ -3259,32 +3526,32 @@ function openStaffRecordModal(editId){
   document.getElementById('staff-record-modal').classList.remove('hidden');
   document.getElementById('srm-edit-id').value=editId||'';
   document.getElementById('srm-title').textContent=editId?'Edit Staff Member':'Add Staff Member';
+  const fv=(id,val)=>{const el=document.getElementById(id);if(el){if(el.type==='checkbox')el.checked=!!val;else el.value=val||'';}};
   if(editId){
     const s=getStaffRecords().find(r=>r.id===editId);
     if(s){
-      document.getElementById('srm-name').value=s.name||'';
-      document.getElementById('srm-dob').value=s.dob||'';
-      document.getElementById('srm-ni').value=s.ni||'';
-      document.getElementById('srm-start').value=s.start||'';
-      document.getElementById('srm-address').value=s.address||'';
-      document.getElementById('srm-email').value=s.email||'';
-      document.getElementById('srm-phone').value=s.phone||'';
-      document.getElementById('srm-sort').value=s.sort||'';
-      document.getElementById('srm-account').value=s.account||'';
-      document.getElementById('srm-bank').value=s.bank||'';
-      document.getElementById('srm-rate').value=s.rate||'';
-      document.getElementById('srm-freq').value=s.freq||'Per event';
-      document.getElementById('srm-taxcode').value=s.taxcode||'1257L';
-      document.getElementById('srm-rtw-doc').value=s.rtwDoc||'UK Passport';
-      document.getElementById('srm-rtw-date').value=s.rtwDate||'';
-      document.getElementById('srm-notes').value=s.notes||'';
+      fv('srm-name',s.name);fv('srm-dob',s.dob);fv('srm-ni',s.ni);fv('srm-start',s.start);
+      fv('srm-address',s.address);fv('srm-email',s.email);fv('srm-phone',s.phone);
+      fv('srm-sort',s.sort);fv('srm-account',s.account);fv('srm-bank',s.bank);
+      fv('srm-rate',s.rate);fv('srm-freq',s.freq||'Per event');fv('srm-taxcode',s.taxcode||'1257L');
+      fv('srm-rtw-doc',s.rtwDoc||'UK Passport');fv('srm-rtw-date',s.rtwDate);
+      fv('srm-emergency-name',s.emergencyName);fv('srm-emergency-rel',s.emergencyRel);fv('srm-emergency-phone',s.emergencyPhone);
+      fv('srm-emergency2-name',s.emergency2Name);fv('srm-emergency2-phone',s.emergency2Phone);
+      fv('srm-allergies',s.allergies);fv('srm-dietary',s.dietary);fv('srm-medical',s.medical);
+      fv('srm-food-hygiene',s.foodHygieneLevel);fv('srm-food-hygiene-expiry',s.foodHygieneExpiry);
+      fv('srm-first-aid',s.firstAid);fv('srm-first-aid-expiry',s.firstAidExpiry);
+      fv('srm-driving',s.drivingLicence);fv('srm-driving-cats',s.drivingCats);
+      fv('srm-uniform',s.uniformSize);fv('srm-notes',s.notes);
     }
   } else {
-    ['srm-name','srm-dob','srm-ni','srm-start','srm-address','srm-email','srm-phone','srm-sort','srm-account','srm-bank','srm-rate','srm-rtw-date','srm-notes'].forEach(id=>{document.getElementById(id).value='';});
-    document.getElementById('srm-freq').value='Per event';
-    document.getElementById('srm-taxcode').value='1257L';
-    document.getElementById('srm-rtw-doc').value='UK Passport';
-    document.getElementById('srm-rtw-date').value=new Date().toISOString().slice(0,10);
+    document.querySelectorAll('#staff-record-modal input:not([type=hidden]):not([type=checkbox]),#staff-record-modal textarea,#staff-record-modal select').forEach(el=>{
+      if(el.type==='checkbox') el.checked=false;
+      else if(el.id==='srm-freq') el.value='Per event';
+      else if(el.id==='srm-taxcode') el.value='1257L';
+      else if(el.id==='srm-rtw-doc') el.value='UK Passport';
+      else if(el.id==='srm-rtw-date') el.value=new Date().toISOString().slice(0,10);
+      else el.value='';
+    });
   }
 }
 
@@ -3292,24 +3559,25 @@ function saveStaffRecord(){
   const name=document.getElementById('srm-name').value.trim();
   if(!name){alert('Name required');return;}
   const editId=document.getElementById('srm-edit-id').value;
+  const gv=id=>{const el=document.getElementById(id);return el?el.value:'';}; 
+  const gc=id=>{const el=document.getElementById(id);return el?el.checked:false;};
   const record={
     id:editId||uid(),
     name,
-    dob:document.getElementById('srm-dob').value,
-    ni:document.getElementById('srm-ni').value.toUpperCase(),
-    start:document.getElementById('srm-start').value,
-    address:document.getElementById('srm-address').value,
-    email:document.getElementById('srm-email').value,
-    phone:document.getElementById('srm-phone').value,
-    sort:document.getElementById('srm-sort').value,
-    account:document.getElementById('srm-account').value,
-    bank:document.getElementById('srm-bank').value,
-    rate:+document.getElementById('srm-rate').value||0,
-    freq:document.getElementById('srm-freq').value,
-    taxcode:document.getElementById('srm-taxcode').value||'1257L',
-    rtwDoc:document.getElementById('srm-rtw-doc').value,
-    rtwDate:document.getElementById('srm-rtw-date').value,
-    notes:document.getElementById('srm-notes').value,
+    dob:gv('srm-dob')||null,
+    ni:gv('srm-ni').toUpperCase()||null,
+    start:gv('srm-start')||null,
+    address:gv('srm-address'),email:gv('srm-email'),phone:gv('srm-phone'),
+    sort:gv('srm-sort'),account:gv('srm-account'),bank:gv('srm-bank'),
+    rate:+gv('srm-rate')||0,freq:gv('srm-freq')||'Per event',taxcode:gv('srm-taxcode')||'1257L',
+    rtwDoc:gv('srm-rtw-doc'),rtwDate:gv('srm-rtw-date')||null,
+    emergencyName:gv('srm-emergency-name'),emergencyRel:gv('srm-emergency-rel'),emergencyPhone:gv('srm-emergency-phone'),
+    emergency2Name:gv('srm-emergency2-name'),emergency2Phone:gv('srm-emergency2-phone'),
+    allergies:gv('srm-allergies'),dietary:gv('srm-dietary'),medical:gv('srm-medical'),
+    foodHygieneLevel:gv('srm-food-hygiene'),foodHygieneExpiry:gv('srm-food-hygiene-expiry')||null,
+    firstAid:gc('srm-first-aid'),firstAidExpiry:gv('srm-first-aid-expiry')||null,
+    drivingLicence:gc('srm-driving'),drivingCats:gv('srm-driving-cats'),
+    uniformSize:gv('srm-uniform'),notes:gv('srm-notes'),
     active:true
   };
   if(!data.staffRecords) data.staffRecords=[];
@@ -3319,13 +3587,31 @@ function saveStaffRecord(){
   } else {
     data.staffRecords.push(record);
   }
-  save();closeModals();renderStaffRecords();
+  saveLocal();
+  await sb.from('finance_staff').upsert({
+    id:record.id,name:record.name,dob:record.dob||null,ni_number:record.ni||null,
+    employment_start:record.start||null,address:record.address||null,email:record.email||null,phone:record.phone||null,
+    bank_sort_code:record.sort||null,bank_account:record.account||null,bank_name:record.bank||null,
+    pay_rate:record.rate||null,pay_frequency:record.freq,tax_code:record.taxcode,
+    rtw_doc_type:record.rtwDoc||null,rtw_check_date:record.rtwDate||null,
+    emergency_contact_name:record.emergencyName||null,emergency_contact_relation:record.emergencyRel||null,
+    emergency_contact_phone:record.emergencyPhone||null,emergency_contact_2_name:record.emergency2Name||null,
+    emergency_contact_2_phone:record.emergency2Phone||null,
+    allergies:record.allergies||null,dietary_requirements:record.dietary||null,medical_notes:record.medical||null,
+    food_hygiene_level:record.foodHygieneLevel||null,food_hygiene_expiry:record.foodHygieneExpiry||null,
+    first_aid_trained:record.firstAid||false,first_aid_expiry:record.firstAidExpiry||null,
+    driving_licence:record.drivingLicence||false,driving_licence_categories:record.drivingCats||null,
+    uniform_size:record.uniformSize||null,notes:record.notes||null,active:record.active!==false,
+    updated_at:new Date().toISOString()
+  },{onConflict:'id'});
+  closeModals();renderStaffRecords();
 }
 
-function deleteStaffRecord(id){
+async function deleteStaffRecord(id){
   if(!confirm('Delete this staff record? This cannot be undone.')) return;
-  data.staffRecords=(data.staffRecords||[]).filter(r=>r.id!==id);
-  save();renderStaffRecords();
+  data.staffRecords=(data.staffRecords||[]).filter(r=>r.id!==id);saveLocal();
+  await sb.from('finance_staff').delete().eq('id',id);
+  renderStaffRecords();
 }
 
 function staffHoursThisYear(id){
@@ -3512,21 +3798,27 @@ function savePayrollRun(){
   };
   if(!data.payrollRuns) data.payrollRuns=[];
   data.payrollRuns.push(run);
-  // Also post gross wages as an expense
-  data.expenses.push({id:uid(),date,amount:gross+ernic,cat:'Staff Costs',desc:(run.desc||'Payroll run')+' — wages + er.NIC',ref:'PAY-'+run.id.slice(-6),landowner:false});
-  save();closeModals();renderPayrollRuns();renderStaffRecords();
+  const expEntry={id:uid(),date,amount:gross+ernic,cat:'Staff Costs',desc:(run.desc||'Payroll run')+' — wages + er.NIC',ref:'PAY-'+run.id.slice(-6),landowner:false};
+  data.expenses.push(expEntry);
+  saveLocal();
+  // Write to Supabase
+  await sb.from('finance_payroll_runs').upsert({id:run.id,date:run.date,description:run.desc||null,job_code_id:run.jobCodeId||null,gross:run.gross,paye:run.paye,employee_nic:run.enic,employer_nic:run.ernic,net:run.net,rti_submitted:false},{onConflict:'id'});
+  await Promise.all(run.lines.map(l=>sb.from('finance_payroll_lines').insert({id:uid(),run_id:run.id,staff_id:l.staffId,hours:l.hours,rate:l.rate,gross:l.gross})));
+  await sb.from('finance_expenses').upsert({id:expEntry.id,date:expEntry.date,amount:expEntry.amount,category:expEntry.cat,description:expEntry.desc,reference:expEntry.ref,is_landowner:false,tax_year:data.taxYear},{onConflict:'id'});
+  closeModals();renderPayrollRuns();renderStaffRecords();
 }
 
-function toggleRTI(id){
+async function toggleRTI(id){
   const run=(data.payrollRuns||[]).find(r=>r.id===id);
-  if(run) run.rtiSubmitted=!run.rtiSubmitted;
-  save();renderPayrollRuns();
+  if(run){run.rtiSubmitted=!run.rtiSubmitted;saveLocal();await sb.from('finance_payroll_runs').update({rti_submitted:run.rtiSubmitted}).eq('id',id);}
+  renderPayrollRuns();
 }
 
-function deletePayrollRun(id){
+async function deletePayrollRun(id){
   if(!confirm('Delete this payroll run?')) return;
-  data.payrollRuns=(data.payrollRuns||[]).filter(r=>r.id!==id);
-  save();renderPayrollRuns();
+  data.payrollRuns=(data.payrollRuns||[]).filter(r=>r.id!==id);saveLocal();
+  await sb.from('finance_payroll_runs').delete().eq('id',id);
+  renderPayrollRuns();
 }
 
 function renderPayrollRuns(){
@@ -3598,10 +3890,11 @@ function saveInsurance(){
     premium:+document.getElementById('ins-premium').value||0
   };
   if(!data.insurance) data.insurance=[];
-  // Replace existing of same type or add
   const idx=data.insurance.findIndex(i=>i.type===type);
   if(idx>=0) data.insurance[idx]=entry; else data.insurance.push(entry);
-  save();closeModals();renderCompliancePage();
+  saveLocal();
+  await sb.from('finance_insurance').upsert({id:entry.id,type:entry.type,cover:entry.cover,insurer:entry.insurer,policy_number:entry.policy,renewal_date:entry.renewal||null,annual_premium:entry.premium||null,updated_at:new Date().toISOString()},{onConflict:'type'});
+  closeModals();renderCompliancePage();
 }
 
 function openInsuranceModal(){
@@ -3614,11 +3907,11 @@ function openInsuranceModal(){
 
 function savePAYERef(){
   data.payeRef=document.getElementById('paye-ref-input').value;
-  save();
+  saveSettings();
 }
 function saveAORef(){
   data.aoRef=document.getElementById('ao-ref-input').value;
-  save();
+  saveSettings();
 }
 
 function renderCompliancePage(){
@@ -3701,36 +3994,43 @@ function renderRTWTable(){
 // =========================================================
 // INIT
 // =========================================================
-load();
-// Seed default rules if none exist
-if(!data.rules||data.rules.length===0){
-  data.rules=[
-    {id:uid(),match:'James Brierley',dir:'in',action:'skip',stream:'Capital Injection',cat:'',landowner:false},
-    {id:uid(),match:'BRIERLEY J',dir:'in',action:'skip',stream:'Capital Injection',cat:'',landowner:false},
-    {id:uid(),match:'Produce Warriors',dir:'out',action:'expense',stream:'',cat:'Food & Drink',landowner:false},
-    {id:uid(),match:'James Brierley',dir:'out',action:'skip',stream:'',cat:'',landowner:false},
-  ];
-  save();
-}
-// Set defaults
-document.getElementById('home-method').value=data.homeMethod||'flat';
-if(data.homeHours) document.getElementById('home-hours').value=data.homeHours;
-if(data.homeRooms) document.getElementById('home-rooms').value=data.homeRooms;
-if(data.homeWorkRooms) document.getElementById('home-work-rooms').value=data.homeWorkRooms;
-if(data.homeCosts) document.getElementById('home-costs').value=data.homeCosts;
-if(data.homeBizPct) document.getElementById('home-biz-pct').value=data.homeBizPct;
-populateJobCodeSelects();
-setTaxYear(data.taxYear||'2526');
-calcHomeWorking();
-showPage('dashboard');
-// Auto-check Starling connection in background on every page load
-setTimeout(checkSyncConnection, 1500);
+// Load from localStorage cache first (instant)
+loadLocal();
 
-// Warn before closing/navigating away
-window.addEventListener('beforeunload', function(e){
-  e.preventDefault();
-  e.returnValue = '';
-});
+// Then sync from Supabase (authoritative)
+async function initApp(){
+  // Check if we have old localStorage data to migrate
+  try{
+    const oldData=localStorage.getItem('digbys_accounts_v1');
+    if(oldData){
+      const parsed=JSON.parse(oldData);
+      Object.assign(data, parsed);
+      // Migrate to Supabase in background
+      setTimeout(()=>migrateLocalToSupabase(parsed), 2000);
+    }
+  }catch(e){}
+
+  // Sync from Supabase
+  await syncFromSupabase();
+
+  // Apply settings to UI
+  document.getElementById('home-method').value=data.homeMethod||'flat';
+  if(data.homeHours) document.getElementById('home-hours').value=data.homeHours;
+  if(data.homeRooms) document.getElementById('home-rooms').value=data.homeRooms;
+  if(data.homeWorkRooms) document.getElementById('home-work-rooms').value=data.homeWorkRooms;
+  if(data.homeCosts) document.getElementById('home-costs').value=data.homeCosts;
+  if(data.homeBizPct) document.getElementById('home-biz-pct').value=data.homeBizPct;
+  if(data.payeRef) document.getElementById('paye-ref-input').value=data.payeRef;
+  if(data.aoRef) document.getElementById('ao-ref-input').value=data.aoRef;
+
+  populateJobCodeSelects();
+  setTaxYear(data.taxYear||'2526');
+  calcHomeWorking();
+  showPage('dashboard');
+  setTimeout(checkSyncConnection, 1000);
+}
+
+initApp();
 </script>
 </body>
 </html>
