@@ -3725,6 +3725,12 @@ calcHomeWorking();
 showPage('dashboard');
 // Auto-check Starling connection in background on every page load
 setTimeout(checkSyncConnection, 1500);
+
+// Warn before closing/navigating away
+window.addEventListener('beforeunload', function(e){
+  e.preventDefault();
+  e.returnValue = '';
+});
 </script>
 </body>
 </html>
