@@ -2307,7 +2307,7 @@ function openJobCodeModal(prefill){
   document.getElementById('jc-notes').value='';
 }
 
-function saveJobCode(){
+async function saveJobCode(){
   const code=document.getElementById('jc-code').value.trim();
   const name=document.getElementById('jc-name').value.trim();
   if(!code){alert('Enter a job code');return;}
@@ -2739,7 +2739,7 @@ function updateRuleActionUI(){
   document.getElementById('rule-expense-group').classList.toggle('hidden',action!=='expense');
 }
 
-function saveRule(){
+async function saveRule(){
   const match=document.getElementById('rule-match').value.trim();
   if(!match){alert('Enter a Counter Party to match');return;}
   const rule={
@@ -2764,7 +2764,7 @@ function saveRule(){
   closeModals();renderRulesTable();
 }
 
-function deleteRule(id){
+async function deleteRule(id){
   if(!confirm('Delete this rule?')) return;
   data.rules=(data.rules||[]).filter(r=>r.id!==id);saveLocal();
   await sb.from('finance_import_rules').delete().eq('id',id);
@@ -3555,7 +3555,7 @@ function openStaffRecordModal(editId){
   }
 }
 
-function saveStaffRecord(){
+async function saveStaffRecord(){
   const name=document.getElementById('srm-name').value.trim();
   if(!name){alert('Name required');return;}
   const editId=document.getElementById('srm-edit-id').value;
@@ -3771,7 +3771,7 @@ function openPayrollModal(){
   addPayrollStaffRow();
 }
 
-function savePayrollRun(){
+async function savePayrollRun(){
   const date=document.getElementById('pm-date').value;
   if(!date){alert('Pay date required');return;}
   const rows=document.querySelectorAll('#pm-staff-rows > div');
@@ -3878,7 +3878,7 @@ function generatePayrollSummary(runId){
 // =========================================================
 // COMPLIANCE PAGE
 // =========================================================
-function saveInsurance(){
+async function saveInsurance(){
   const type=document.getElementById('ins-type').value;
   const entry={
     id:uid(),
