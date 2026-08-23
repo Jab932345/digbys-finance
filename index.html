@@ -3997,40 +3997,53 @@ function renderRTWTable(){
 // Load from localStorage cache first (instant)
 loadLocal();
 
-// Then sync from Supabase (authoritative)
-async function initApp(){
-  // Check if we have old localStorage data to migrate
-  try{
-    const oldData=localStorage.getItem('digbys_accounts_v1');
-    if(oldData){
-      const parsed=JSON.parse(oldData);
-      Object.assign(data, parsed);
-      // Migrate to Supabase in background
-      setTimeout(()=>migrateLocalToSupabase(parsed), 2000);
-    }
-  }catch(e){}
-
-  // Sync from Supabase
-  await syncFromSupabase();
-
-  // Apply settings to UI
+function applySettingsToUI(){
   document.getElementById('home-method').value=data.homeMethod||'flat';
   if(data.homeHours) document.getElementById('home-hours').value=data.homeHours;
   if(data.homeRooms) document.getElementById('home-rooms').value=data.homeRooms;
   if(data.homeWorkRooms) document.getElementById('home-work-rooms').value=data.homeWorkRooms;
   if(data.homeCosts) document.getElementById('home-costs').value=data.homeCosts;
   if(data.homeBizPct) document.getElementById('home-biz-pct').value=data.homeBizPct;
-  if(data.payeRef) document.getElementById('paye-ref-input').value=data.payeRef;
-  if(data.aoRef) document.getElementById('ao-ref-input').value=data.aoRef;
-
-  populateJobCodeSelects();
-  setTaxYear(data.taxYear||'2526');
-  calcHomeWorking();
-  showPage('dashboard');
-  setTimeout(checkSyncConnection, 1000);
+  const payeEl=document.getElementById('paye-ref-input');if(payeEl&&data.payeRef) payeEl.value=data.payeRef;
+  const aoEl=document.getElementById('ao-ref-input');if(aoEl&&data.aoRef) aoEl.value=data.aoRef;
 }
 
-initApp();
+// Show app immediately from local cache — never block on Supabase
+applySettingsToUI();
+populateJobCodeSelects();
+setTaxYear(data.taxYear||'2526');
+calcHomeWorking();
+showPage('dashboard');
+
+// Sync Supabase in background after UI is visible
+async function initApp(){
+  try{
+    // Migrate old localStorage data if present
+    const oldData=localStorage.getItem('digbys_accounts_v1');
+    if(oldData){
+      try{
+        const parsed=JSON.parse(oldData);
+        Object.assign(data,parsed);
+        setTimeout(()=>migrateLocalToSupabase(parsed),3000);
+      }catch(e){}
+    }
+    // Sync from Supabase with 10s timeout
+    const timeoutPromise=new Promise((_,reject)=>setTimeout(()=>reject(new Error('Supabase timeout')),10000));
+    await Promise.race([syncFromSupabase(),timeoutPromise]);
+    // Re-apply UI after sync in case settings changed
+    applySettingsToUI();
+    populateJobCodeSelects();
+    setTaxYear(data.taxYear||'2526');
+    calcHomeWorking();
+    refreshDashboard();
+  }catch(e){
+    console.warn('Background sync failed:',e.message);
+    showSyncIndicator('Offline — using local data',false,true);
+  }
+  setTimeout(checkSyncConnection,500);
+}
+
+setTimeout(initApp,100);
 </script>
 </body>
 </html>
