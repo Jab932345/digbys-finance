@@ -1887,7 +1887,27 @@ function getPhase(){
 // NAVIGATION
 // =========================================================
 const pages=['dashboard','income','events','expenses','mileage','equipment','import','tax','reports','jobcodes','staff-records','payroll','compliance'];
+function hasUnsavedModalData(){
+  // Check if any visible modal has content filled in
+  const modals=['staff-record-modal','income-modal','expense-modal','event-modal','mileage-modal','equip-modal','payroll-modal'];
+  for(const id of modals){
+    const m=document.getElementById(id);
+    if(!m||m.classList.contains('hidden')) continue;
+    const inputs=[...m.querySelectorAll('input:not([type=hidden]):not([type=checkbox]),textarea,select')];
+    if(inputs.some(el=>el.value&&el.value!==el.defaultValue)) return true;
+  }
+  // Check if staff record form has data (it's on a page not a modal)
+  const srmName=document.getElementById('srm-name');
+  if(srmName&&srmName.value&&!document.getElementById('staff-record-modal')?.classList.contains('hidden')) return true;
+  return false;
+}
+
 function showPage(p){
+  // Guard: warn if a modal has unsaved content
+  if(hasUnsavedModalData()){
+    if(!confirm('You have unsaved changes. Leave without saving?')) return;
+    closeModals();
+  }
   pages.forEach(id=>{
     const el=document.getElementById('page-'+id);
     if(el) el.classList.toggle('hidden',id!==p);
@@ -2007,7 +2027,7 @@ async function saveIncome(){
   data.income.push(entry);
   saveLocal();
   await sb.from('finance_income').upsert({id:entry.id,date:entry.date,amount:entry.amount,stream:entry.stream,description:entry.desc,reference:entry.ref,is_landowner:entry.landowner,tax_year:data.taxYear},{onConflict:'id'});
-  closeModals();renderIncomeTable();refreshDashboard();
+  closeModals(true);renderIncomeTable();refreshDashboard();
 }
 
 async function deleteIncome(id){
@@ -2069,7 +2089,7 @@ async function saveEvent(){
     sb.from('finance_events').upsert({id:entry.id,date:entry.date,type:entry.type,client:entry.client,covers:entry.covers,revenue:entry.revenue,direct_costs:entry.costs,profit:entry.profit,notes:entry.notes},{onConflict:'id'}),
     sb.from('finance_income').upsert({id:incEntry.id,date:incEntry.date,amount:incEntry.amount,stream:incEntry.stream,description:incEntry.desc,is_landowner:false,tax_year:data.taxYear},{onConflict:'id'})
   ]);
-  closeModals();renderEventTable();refreshDashboard();
+  closeModals(true);renderEventTable();refreshDashboard();
 }
 
 async function deleteEvent(id){
@@ -2138,7 +2158,7 @@ async function saveExpense(){
   };
   data.expenses.push(entry);saveLocal();
   await sb.from('finance_expenses').upsert({id:entry.id,date:entry.date,amount:entry.amount,category:entry.cat,description:entry.desc,reference:entry.ref,is_landowner:entry.landowner,tax_year:data.taxYear},{onConflict:'id'});
-  closeModals();renderExpenseTable();refreshDashboard();
+  closeModals(true);renderExpenseTable();refreshDashboard();
 }
 
 async function deleteExpense(id){
@@ -2195,7 +2215,7 @@ function saveMileage(){
     driver:'Manual'
   };
   data.mileage.push(entry);
-  save();closeModals();renderMileageTable();
+  save();closeModals(true);renderMileageTable();
 }
 
 function deleteMileage(id){if(confirm('Delete journey?')){data.mileage=data.mileage.filter(i=>i.id!==id);save();renderMileageTable();}}
@@ -2331,7 +2351,7 @@ async function saveJobCode(){
   }
   saveLocal();
   await sb.from('finance_job_codes').upsert({id:entry.id,code:entry.code,name:entry.name,type:entry.type,event_date:entry.date||null,notes:entry.notes,source:entry.source||'manual'},{onConflict:'id'});
-  closeModals();
+  closeModals(true);
   populateJobCodeSelects();
   const trkSel=document.getElementById('trk-jobcode');
   if(trkSel) trkSel.value=entry.id;
@@ -2428,7 +2448,7 @@ function saveStaff(){
   } else {
     data.staff.push({id:uid(),name,pin});
   }
-  save();closeModals();renderStaffTable();renderStaffGrid();
+  save();closeModals(true);renderStaffTable();renderStaffGrid();
 }
 
 function deleteStaff(id){
@@ -2620,7 +2640,7 @@ async function saveEquipment(){
   const entry={id:uid(),date:document.getElementById('eq-date').value,cost:+document.getElementById('eq-cost').value||0,desc:document.getElementById('eq-desc').value,supplier:document.getElementById('eq-supplier').value,ref:document.getElementById('eq-ref').value};
   data.equipment.push(entry);saveLocal();
   await sb.from('finance_equipment').upsert({id:entry.id,date:entry.date,description:entry.desc,supplier:entry.supplier,reference:entry.ref,cost:entry.cost},{onConflict:'id'});
-  closeModals();renderEquipTable();
+  closeModals(true);renderEquipTable();
 }
 
 async function deleteEquip(id){
@@ -2761,7 +2781,7 @@ async function saveRule(){
   }
   saveLocal();
   await sb.from('finance_import_rules').upsert({id:rule.id,match_text:rule.match,direction:rule.dir,action:rule.action,income_stream:rule.stream||null,expense_category:rule.cat||null,is_landowner:rule.landowner||false},{onConflict:'id'});
-  closeModals();renderRulesTable();
+  closeModals(true);renderRulesTable();
 }
 
 async function deleteRule(id){
@@ -3481,7 +3501,19 @@ function exportExpensesCat(){
 // =========================================================
 // MODALS
 // =========================================================
-function closeModals(){
+function closeModals(force){
+  if(!force){
+    const modals=['staff-record-modal','income-modal','expense-modal','event-modal','mileage-modal','equip-modal','payroll-modal'];
+    for(const id of modals){
+      const m=document.getElementById(id);
+      if(!m||m.classList.contains('hidden')) continue;
+      const inputs=[...m.querySelectorAll('input:not([type=hidden]):not([type=checkbox]),textarea')];
+      if(inputs.some(el=>el.value&&el.value!==el.defaultValue)){
+        if(!confirm('Discard unsaved changes?')) return;
+        break;
+      }
+    }
+  }
   document.querySelectorAll('.modal-overlay').forEach(m=>m.classList.add('hidden'));
 }
 document.querySelectorAll('.modal-overlay').forEach(el=>{
@@ -3604,7 +3636,7 @@ async function saveStaffRecord(){
     uniform_size:record.uniformSize||null,notes:record.notes||null,active:record.active!==false,
     updated_at:new Date().toISOString()
   },{onConflict:'id'});
-  closeModals();renderStaffRecords();
+  closeModals(true);renderStaffRecords();
 }
 
 async function deleteStaffRecord(id){
@@ -3805,7 +3837,7 @@ async function savePayrollRun(){
   await sb.from('finance_payroll_runs').upsert({id:run.id,date:run.date,description:run.desc||null,job_code_id:run.jobCodeId||null,gross:run.gross,paye:run.paye,employee_nic:run.enic,employer_nic:run.ernic,net:run.net,rti_submitted:false},{onConflict:'id'});
   await Promise.all(run.lines.map(l=>sb.from('finance_payroll_lines').insert({id:uid(),run_id:run.id,staff_id:l.staffId,hours:l.hours,rate:l.rate,gross:l.gross})));
   await sb.from('finance_expenses').upsert({id:expEntry.id,date:expEntry.date,amount:expEntry.amount,category:expEntry.cat,description:expEntry.desc,reference:expEntry.ref,is_landowner:false,tax_year:data.taxYear},{onConflict:'id'});
-  closeModals();renderPayrollRuns();renderStaffRecords();
+  closeModals(true);renderPayrollRuns();renderStaffRecords();
 }
 
 async function toggleRTI(id){
@@ -3894,7 +3926,7 @@ async function saveInsurance(){
   if(idx>=0) data.insurance[idx]=entry; else data.insurance.push(entry);
   saveLocal();
   await sb.from('finance_insurance').upsert({id:entry.id,type:entry.type,cover:entry.cover,insurer:entry.insurer,policy_number:entry.policy,renewal_date:entry.renewal||null,annual_premium:entry.premium||null,updated_at:new Date().toISOString()},{onConflict:'type'});
-  closeModals();renderCompliancePage();
+  closeModals(true);renderCompliancePage();
 }
 
 function openInsuranceModal(){
