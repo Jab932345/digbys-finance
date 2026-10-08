@@ -78,6 +78,7 @@ const divName = (d) => { const x = E.DIVISIONS.find(v => v.id === d); return x ?
 const divChip = (d) => `<span class="pill"><span class="dot ${esc(d || 'none')}"></span>${esc(divName(d))}</span>`;
 const vatShort = (c) => (E.VAT_CODES[c] || { short: c || '—' }).short;
 const vatOn = (date) => E.vatActive(S.company, date || today());
+const isLtd = () => (S.company.entityType || 'ltd') === 'ltd';
 const lockedDate = (date) => !!(S.company.lockDate && date && date <= S.company.lockDate);
 const staffName = (sid) => { const s = (S.staff || []).find(x => x.id === sid); return s ? s.name : sid; };
 
@@ -270,7 +271,7 @@ const NAV = [
   { group: 'Bank', items: [['bank', 'Bank & reconcile', 'bank']] },
   { group: 'Tax', items: [['vat', 'VAT', 'vat']] },
   { group: 'People', items: [['payroll', 'Payroll', 'pay'], ['staff', 'Staff', 'staff'], ['mileage', 'Mileage', 'car']] },
-  { group: 'Company', items: [['dla', "Directors' loans", 'loan'], ['assets', 'Fixed assets', 'asset'], ['jobs', 'Job codes', 'tag']] },
+  { group: 'Company', items: [['dla', 'Owner & directors', 'loan'], ['assets', 'Fixed assets', 'asset'], ['jobs', 'Job codes', 'tag']] },
   { group: 'Reports', items: [['pnl', 'Profit & loss', 'chart'], ['balance', 'Balance sheet', 'scales'], ['tb', 'Trial balance', 'list'], ['gl', 'General ledger', 'book'], ['aged', 'Aged debts', 'clock']] },
   { group: 'Accountant', items: [['export', 'Export pack', 'box'], ['audit', 'Audit trail', 'shield'], ['notes', 'System notes', 'doc']] },
   { group: null, items: [['settings', 'Settings', 'gear']] }

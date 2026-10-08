@@ -1,6 +1,7 @@
 -- =====================================================================
 -- Digby's & Co Limited — company books
 -- Supabase project jaajrllkozknilvmdezt. Paste into SQL Editor and run.
+-- The books run as the sole trader from 6 April 2026; switch to the limited company in Settings on incorporation.
 -- Safe to run again: it only adds what is missing.
 --
 -- What this sets up
@@ -153,7 +154,7 @@ revoke insert, update, delete, truncate on co_audit from anon, authenticated;
 -- ---------- starting data ----------
 insert into co_users (email, name, role) values ('james@digbysevents.co.uk', 'James Brierley', 'owner') on conflict (email) do nothing;
 
-insert into co_settings (id, data) values ('company', '{"name":"Digby''s & Co Limited","tradingName":"Digby''s","registeredIn":"England and Wales","yearEnd":"03-31","associatedCompanies":0,"vatRegistered":false,"vatScheme":"standard","vatStagger":1,"flatRate":12.5,"invoicePrefix":"INV-","nextInvoiceNo":188,"paymentTerms":30,"email":"james@digbysevents.co.uk","bankName":"Starling Bank","bankAccountName":"Digby''s & Co Limited","directors":[{"name":"James Brierley","share":70,"dla":"2300"},{"name":"Mike Jeffries","share":30,"dla":"2301"}]}'::jsonb) on conflict (id) do nothing;
+insert into co_settings (id, data) values ('company', '{"entityType":"sole_trader","name":"Digby''s Events & Catering","tradingName":"Digby''s","ownerName":"James Brierley","booksStart":"2026-04-06","registeredIn":"England and Wales","yearEnd":"04-05","associatedCompanies":0,"vatRegistered":false,"vatScheme":"standard","vatStagger":1,"flatRate":12.5,"invoicePrefix":"INV-","nextInvoiceNo":188,"paymentTerms":30,"email":"james@digbysevents.co.uk","bankName":"Starling Bank","bankAccountName":"James Brierley","directors":[{"name":"James Brierley","share":100,"dla":"2300"}]}'::jsonb) on conflict (id) do nothing;
 
 insert into co_accounts (code, type, archived, data) values
   ('0010', 'fixed', false, '{"code":"0010","name":"Kitchen equipment & machinery","type":"fixed","vatDefault":"S20","archived":false}'::jsonb),
@@ -223,7 +224,8 @@ insert into co_bank_rules (id, match, data) values
   ('rule-booker', 'BOOKER', '{"id":"rule-booker","match":"BOOKER","direction":"out","action":"code","account":"5000","vatCode":"Z0","division":null}'::jsonb),
   ('rule-oxhay', 'OXHAY', '{"id":"rule-oxhay","match":"OXHAY","direction":"out","action":"code","account":"5010","vatCode":"Z0","division":"butchery"}'::jsonb),
   ('rule-plato', 'PLATO', '{"id":"rule-plato","match":"PLATO","direction":"out","action":"code","account":"5030","vatCode":"S20","division":"events"}'::jsonb),
-  ('rule-brierley-in', 'BRIERLEY', '{"id":"rule-brierley-in","match":"BRIERLEY","direction":"in","action":"code","account":"2300","vatCode":"OS","division":null}'::jsonb),
+  ('rule-brierley', 'BRIERLEY J', '{"id":"rule-brierley","match":"BRIERLEY J","direction":"any","action":"code","account":"2300","vatCode":"OS","division":null}'::jsonb),
+  ('rule-james-brierley', 'JAMES BRIERLEY', '{"id":"rule-james-brierley","match":"JAMES BRIERLEY","direction":"any","action":"code","account":"2300","vatCode":"OS","division":null}'::jsonb),
   ('rule-jeffries-in', 'JEFFRIES', '{"id":"rule-jeffries-in","match":"JEFFRIES","direction":"in","action":"code","account":"2301","vatCode":"OS","division":null}'::jsonb),
   ('rule-hmrc-out', 'HMRC', '{"id":"rule-hmrc-out","match":"HMRC","direction":"out","action":"code","account":"2210","vatCode":"OS","division":null}'::jsonb)
 on conflict (id) do nothing;
@@ -256,6 +258,16 @@ begin
     on conflict (code) do nothing;
   end if;
   exception when others then raise notice 'Job codes not copied (%)', sqlerrm;
+  end;
+  begin
+  if to_regclass('public.finance_mileage') is not null then
+    insert into co_mileage (id, date, driver, data)
+    select id::text, date, coalesce(driver, 'James Brierley'), jsonb_strip_nulls(jsonb_build_object('id', id::text, 'date', date, 'miles', miles, 'purpose', purpose,
+      'driver', coalesce(nullif(driver, 'Manual'), 'James Brierley'), 'jobCode', job_code, 'passengers', 0, 'method', 'manual'))
+    from finance_mileage where date >= '2026-04-06'
+    on conflict (id) do nothing;
+  end if;
+  exception when others then raise notice 'Mileage not copied (%)', sqlerrm;
   end;
 end $$;
 

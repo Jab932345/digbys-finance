@@ -1,6 +1,7 @@
 -- =====================================================================
 -- Digby's & Co Limited — company books
 -- Supabase project jaajrllkozknilvmdezt. Paste into SQL Editor and run.
+-- The books run as the sole trader from 6 April 2026; switch to the limited company in Settings on incorporation.
 -- Safe to run again: it only adds what is missing.
 --
 -- What this sets up
@@ -191,6 +192,16 @@ begin
     on conflict (code) do nothing;
   end if;
   exception when others then raise notice 'Job codes not copied (%)', sqlerrm;
+  end;
+  begin
+  if to_regclass('public.finance_mileage') is not null then
+    insert into co_mileage (id, date, driver, data)
+    select id::text, date, coalesce(driver, 'James Brierley'), jsonb_strip_nulls(jsonb_build_object('id', id::text, 'date', date, 'miles', miles, 'purpose', purpose,
+      'driver', coalesce(nullif(driver, 'Manual'), 'James Brierley'), 'jobCode', job_code, 'passengers', 0, 'method', 'manual'))
+    from finance_mileage where date >= '2026-04-06'
+    on conflict (id) do nothing;
+  end if;
+  exception when others then raise notice 'Mileage not copied (%)', sqlerrm;
   end;
 end $$;
 

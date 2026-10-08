@@ -57,6 +57,7 @@
         state.audit = state.audit || [];
         state.audit.push({ id: uuid(), ts: new Date().toISOString(), user: this.user.email, action, entity, entityId, summary, before: before || null, after: after || null });
       },
+      async saveMany(entity, objs) { for (const o of objs) await this.save(entity, o); },
       reset() { try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ } state = null; },
       async starling() {
         // The demo feed returns the bank lines already in the data set
@@ -87,7 +88,7 @@
         if (!s) return false;
         const email = (s.user.email || '').toLowerCase();
         const { data, error } = await sb.from('co_users').select('email,data,role,name').eq('email', email).maybeSingle();
-        if (error) throw error;
+        if (error) { if (/co_users|schema cache|does not exist|PGRST20/i.test((error.message || '') + (error.code || ''))) { const e = new Error('setup'); e.setup = true; throw e; } throw error; }
         if (!data) throw new Error(`${email} is signed in but has not been given access. Ask the account owner to add this email under Settings → Users.`);
         this.user = { email, name: data.name || (data.data || {}).name || email, role: data.role };
         return true;
@@ -113,6 +114,18 @@
         const { data: aud } = await sb.from('co_audit').select('*').order('ts', { ascending: false }).limit(1000);
         state.audit = (aud || []).map(a => ({ id: a.id, ts: a.ts, user: a.user_email, action: a.action, entity: a.entity, entityId: a.entity_id, summary: a.summary, before: a.before, after: a.after }));
         if (!state.accounts.length) state.accounts = root.Engine.DEFAULT_ACCOUNTS.map(a => Object.assign({}, a));
+        // Read-only links into the rest of the Digby's system, all in the same database.
+        // Old finance app categories become coding hints; CPS job codes appear in every job picker.
+        const opt = async (table, cols) => { try { const { data, error } = await sb.from(table).select(cols || '*').limit(5000); return error ? [] : (data || []); } catch (e) { return []; } };
+        const [li, le, cj] = await Promise.all([opt('finance_income', 'date,amount,stream,description'), opt('finance_expenses', 'date,amount,category,description'), opt('job_codes')]);
+        state.legacy = li.map(r => ({ date: r.date, amount: +r.amount, category: r.stream, desc: r.description }))
+          .concat(le.map(r => ({ date: r.date, amount: -Math.abs(+r.amount), category: r.category, desc: r.description })));
+        const have = new Set(state.jobCodes.map(j => j.code));
+        cj.forEach(r => {
+          const code = String(r.code || r.job_code || r.name || '').trim(); if (!code || have.has(code)) return;
+          have.add(code);
+          state.jobCodes.push({ code, name: r.name && r.name !== code ? r.name : (r.description || r.client || r.client_name || code), division: r.division || 'events', eventDate: (r.event_date || r.date || '').slice(0, 10) || null, source: 'cps' });
+        });
         return state;
       },
       async save(entity, obj) {
@@ -131,6 +144,17 @@
         if (error) throw new Error(friendly(error));
         state.company = company; return company;
       },
+      async saveMany(entity, objs) {
+        if (!objs.length) return;
+        const c = ENTITIES[entity]; const now = new Date().toISOString();
+        const rows = objs.map(obj => { if (!obj[c.key]) obj[c.key] = uuid(); return Object.assign({ [c.key]: obj[c.key], data: obj, updated_by: this.user.email, updated_at: now }, c.cols(obj)); });
+        for (let i = 0; i < rows.length; i += 200) {
+          const { error } = await sb.from(c.table).upsert(rows.slice(i, i + 200), { onConflict: c.key });
+          if (error) throw new Error(friendly(error));
+        }
+        const arr = state[entity] = state[entity] || [];
+        objs.forEach(o => { const i = arr.findIndex(x => x[c.key] === o[c.key]); if (i >= 0) arr[i] = o; else arr.push(o); });
+      },
       async remove(entity, idv) {
         const c = ENTITIES[entity];
         const { error } = await sb.from(c.table).delete().eq(c.key, idv);
@@ -140,7 +164,7 @@
       audit() { /* written by database triggers in live mode */ },
       async starling(from, to) {
         const { data } = await sb.auth.getSession();
-        const r = await fetch(`/api/starling?from=${from}&to=${to}`, { headers: { Authorization: 'Bearer ' + ((data.session || {}).access_token || '') } });
+        const r = await fetch(`/api/bank?from=${from}&to=${to}`, { headers: { Authorization: 'Bearer ' + ((data.session || {}).access_token || '') } });
         const body = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(body.error || `Bank feed returned ${r.status}`);
         return body;

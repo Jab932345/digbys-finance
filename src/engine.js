@@ -146,6 +146,7 @@
     let start = new Date(end.getFullYear() - 1, m - 1, d + 1);
     let from = iso(start);
     if (company.incorporated && company.incorporated > from) from = company.incorporated;
+    if (company.booksStart && company.booksStart > from && company.booksStart <= iso(end)) from = company.booksStart;
     return { from, to: iso(end) };
   }
 

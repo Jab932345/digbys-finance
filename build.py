@@ -10,8 +10,11 @@ FONTS = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="p
 JSZIP = '<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>'
 SUPA = '<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>'
 
+import json as _json
+SETUP_SQL = (root / 'sql' / 'digbys-co-ltd-schema.sql').read_text() if (root / 'sql' / 'digbys-co-ltd-schema.sql').exists() else ''
 def body(mode):
     scripts = [JSZIP] + ([SUPA] if mode == 'live' else [])
+    if mode == 'live': scripts.append('<script>window.SETUP_SQL = ' + _json.dumps(SETUP_SQL).replace('</', '<\\/') + ';</script>')
     return f'''<div id="root"></div>
 {''.join(scripts)}
 <script>window.DIGBYS_MODE = "{mode}";</script>

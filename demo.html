@@ -434,6 +434,7 @@ table.t td.wrap { white-space: normal; min-width: 180px; }
     let start = new Date(end.getFullYear() - 1, m - 1, d + 1);
     let from = iso(start);
     if (company.incorporated && company.incorporated > from) from = company.incorporated;
+    if (company.booksStart && company.booksStart > from && company.booksStart <= iso(end)) from = company.booksStart;
     return { from, to: iso(end) };
   }
 
@@ -1234,6 +1235,7 @@ table.t td.wrap { white-space: normal; min-width: 180px; }
         state.audit = state.audit || [];
         state.audit.push({ id: uuid(), ts: new Date().toISOString(), user: this.user.email, action, entity, entityId, summary, before: before || null, after: after || null });
       },
+      async saveMany(entity, objs) { for (const o of objs) await this.save(entity, o); },
       reset() { try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ } state = null; },
       async starling() {
         // The demo feed returns the bank lines already in the data set
@@ -1264,7 +1266,7 @@ table.t td.wrap { white-space: normal; min-width: 180px; }
         if (!s) return false;
         const email = (s.user.email || '').toLowerCase();
         const { data, error } = await sb.from('co_users').select('email,data,role,name').eq('email', email).maybeSingle();
-        if (error) throw error;
+        if (error) { if (/co_users|schema cache|does not exist|PGRST20/i.test((error.message || '') + (error.code || ''))) { const e = new Error('setup'); e.setup = true; throw e; } throw error; }
         if (!data) throw new Error(`${email} is signed in but has not been given access. Ask the account owner to add this email under Settings → Users.`);
         this.user = { email, name: data.name || (data.data || {}).name || email, role: data.role };
         return true;
@@ -1290,6 +1292,18 @@ table.t td.wrap { white-space: normal; min-width: 180px; }
         const { data: aud } = await sb.from('co_audit').select('*').order('ts', { ascending: false }).limit(1000);
         state.audit = (aud || []).map(a => ({ id: a.id, ts: a.ts, user: a.user_email, action: a.action, entity: a.entity, entityId: a.entity_id, summary: a.summary, before: a.before, after: a.after }));
         if (!state.accounts.length) state.accounts = root.Engine.DEFAULT_ACCOUNTS.map(a => Object.assign({}, a));
+        // Read-only links into the rest of the Digby's system, all in the same database.
+        // Old finance app categories become coding hints; CPS job codes appear in every job picker.
+        const opt = async (table, cols) => { try { const { data, error } = await sb.from(table).select(cols || '*').limit(5000); return error ? [] : (data || []); } catch (e) { return []; } };
+        const [li, le, cj] = await Promise.all([opt('finance_income', 'date,amount,stream,description'), opt('finance_expenses', 'date,amount,category,description'), opt('job_codes')]);
+        state.legacy = li.map(r => ({ date: r.date, amount: +r.amount, category: r.stream, desc: r.description }))
+          .concat(le.map(r => ({ date: r.date, amount: -Math.abs(+r.amount), category: r.category, desc: r.description })));
+        const have = new Set(state.jobCodes.map(j => j.code));
+        cj.forEach(r => {
+          const code = String(r.code || r.job_code || r.name || '').trim(); if (!code || have.has(code)) return;
+          have.add(code);
+          state.jobCodes.push({ code, name: r.name && r.name !== code ? r.name : (r.description || r.client || r.client_name || code), division: r.division || 'events', eventDate: (r.event_date || r.date || '').slice(0, 10) || null, source: 'cps' });
+        });
         return state;
       },
       async save(entity, obj) {
@@ -1308,6 +1322,17 @@ table.t td.wrap { white-space: normal; min-width: 180px; }
         if (error) throw new Error(friendly(error));
         state.company = company; return company;
       },
+      async saveMany(entity, objs) {
+        if (!objs.length) return;
+        const c = ENTITIES[entity]; const now = new Date().toISOString();
+        const rows = objs.map(obj => { if (!obj[c.key]) obj[c.key] = uuid(); return Object.assign({ [c.key]: obj[c.key], data: obj, updated_by: this.user.email, updated_at: now }, c.cols(obj)); });
+        for (let i = 0; i < rows.length; i += 200) {
+          const { error } = await sb.from(c.table).upsert(rows.slice(i, i + 200), { onConflict: c.key });
+          if (error) throw new Error(friendly(error));
+        }
+        const arr = state[entity] = state[entity] || [];
+        objs.forEach(o => { const i = arr.findIndex(x => x[c.key] === o[c.key]); if (i >= 0) arr[i] = o; else arr.push(o); });
+      },
       async remove(entity, idv) {
         const c = ENTITIES[entity];
         const { error } = await sb.from(c.table).delete().eq(c.key, idv);
@@ -1317,7 +1342,7 @@ table.t td.wrap { white-space: normal; min-width: 180px; }
       audit() { /* written by database triggers in live mode */ },
       async starling(from, to) {
         const { data } = await sb.auth.getSession();
-        const r = await fetch(`/api/starling?from=${from}&to=${to}`, { headers: { Authorization: 'Bearer ' + ((data.session || {}).access_token || '') } });
+        const r = await fetch(`/api/bank?from=${from}&to=${to}`, { headers: { Authorization: 'Bearer ' + ((data.session || {}).access_token || '') } });
         const body = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(body.error || `Bank feed returned ${r.status}`);
         return body;
@@ -1418,6 +1443,7 @@ const divName = (d) => { const x = E.DIVISIONS.find(v => v.id === d); return x ?
 const divChip = (d) => `<span class="pill"><span class="dot ${esc(d || 'none')}"></span>${esc(divName(d))}</span>`;
 const vatShort = (c) => (E.VAT_CODES[c] || { short: c || '—' }).short;
 const vatOn = (date) => E.vatActive(S.company, date || today());
+const isLtd = () => (S.company.entityType || 'ltd') === 'ltd';
 const lockedDate = (date) => !!(S.company.lockDate && date && date <= S.company.lockDate);
 const staffName = (sid) => { const s = (S.staff || []).find(x => x.id === sid); return s ? s.name : sid; };
 
@@ -1610,7 +1636,7 @@ const NAV = [
   { group: 'Bank', items: [['bank', 'Bank & reconcile', 'bank']] },
   { group: 'Tax', items: [['vat', 'VAT', 'vat']] },
   { group: 'People', items: [['payroll', 'Payroll', 'pay'], ['staff', 'Staff', 'staff'], ['mileage', 'Mileage', 'car']] },
-  { group: 'Company', items: [['dla', "Directors' loans", 'loan'], ['assets', 'Fixed assets', 'asset'], ['jobs', 'Job codes', 'tag']] },
+  { group: 'Company', items: [['dla', 'Owner & directors', 'loan'], ['assets', 'Fixed assets', 'asset'], ['jobs', 'Job codes', 'tag']] },
   { group: 'Reports', items: [['pnl', 'Profit & loss', 'chart'], ['balance', 'Balance sheet', 'scales'], ['tb', 'Trial balance', 'list'], ['gl', 'General ledger', 'book'], ['aged', 'Aged debts', 'clock']] },
   { group: 'Accountant', items: [['export', 'Export pack', 'box'], ['audit', 'Audit trail', 'shield'], ['notes', 'System notes', 'doc']] },
   { group: null, items: [['settings', 'Settings', 'gear']] }
@@ -1716,7 +1742,7 @@ PAGES.home = function () {
     if (s.firstAidExpiry && s.firstAidExpiry <= soon) att.push(['staff', 'warn', `${s.name}: first aid certificate ${s.firstAidExpiry < t ? 'expired' : 'expires'} ${fdate(s.firstAidExpiry)}`, '']);
     if (s.foodHygieneExpiry && s.foodHygieneExpiry <= soon) att.push(['staff', 'warn', `${s.name}: food hygiene ${s.foodHygieneExpiry < t ? 'expired' : 'expires'} ${fdate(s.foodHygieneExpiry)}`, '']);
   });
-  (S.company.directors || []).forEach(d => { const l = E.dla(S, d.dla); if (l.overdrawn) att.push(['dla', 'bad', `${d.name}'s loan account is overdrawn`, money(-l.balance)]); });
+  if (isLtd()) (S.company.directors || []).forEach(d => { const l = E.dla(S, d.dla); if (l.overdrawn) att.push(['dla', 'bad', `${d.name}'s loan account is overdrawn`, money(-l.balance)]); });
 
   const greeting = (() => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; })();
   const first = (store.user.name || '').split(' ')[0];
@@ -1729,7 +1755,7 @@ PAGES.home = function () {
       <button class="tile" data-go="bills"><span class="k">You owe suppliers</span><span class="v">${money(cred.totals.total)}</span><span class="s">${plural(cred.rows.length, 'supplier')}</span></button>
       ${vatTile}
       <button class="tile" data-go="pnl"><span class="k">${UI.div === 'all' ? 'Profit this year' : divName(UI.div) + ' profit this year'}</span><span class="v${colVal(p.totals.netProfit) < 0 ? ' neg' : ''}">${money(colVal(p.totals.netProfit))}</span><span class="s">Sales ${money0(colVal(p.totals.income))} · before tax</span></button>
-      <button class="tile" data-go="notes"><span class="k">Corporation tax estimate</span><span class="v">${money(ct.tax)}</span><span class="s">${esc(ct.band)}</span></button>
+      ${isLtd() ? `<button class="tile" data-go="pnl"><span class="k">Corporation tax estimate</span><span class="v">${money(ct.tax)}</span><span class="s">${esc(ct.band)}</span></button>` : (() => { const o = E.dla(S, '2300').balance; return `<button class="tile" data-go="dla"><span class="k">Owner's account</span><span class="v">${money(Math.abs(o))}</span><span class="s">${o >= 0 ? 'Put in by you, net of drawings' : 'Drawn out, net of money put in'}</span></button>`; })()}
     </div>
     <div class="row-2">
       <section class="panel"><div class="panel-head"><h2>Net profit by month</h2><span class="sub">${UI.div === 'all' ? 'All divisions' : divName(UI.div)} · before tax</span></div><div class="panel-body">${monthChart(cy)}</div></section>
@@ -1841,6 +1867,8 @@ function suggestFor(bl) {
   const hay = `${bl.counterparty || ''} ${bl.reference || ''}`.toUpperCase();
   const rule = (S.rules || []).find(r => r.match && hay.includes(String(r.match).toUpperCase()) && (!r.direction || r.direction === 'any' || (r.direction === 'in') === (amt > 0)));
   if (rule) return { kind: 'rule', rule, text: `Rule: ${acctLabel(rule.account)} · ${vatShort(rule.vatCode)}${rule.division ? ' · ' + divName(rule.division) : ''}` };
+  const sm = typeof STARLING_MAP !== 'undefined' && STARLING_MAP[(bl.category || '').toUpperCase()];
+  if (sm && (amt > 0) === (sm[0] < '5000' && sm[0] >= '4000')) return { kind: 'rule', rule: { account: sm[0], division: sm[1], vatCode: null }, text: `Starling category: ${acctLabel(sm[0])}${sm[1] ? ' · ' + divName(sm[1]) : ''}` };
   return null;
 }
 PAGES.bank = function () {
@@ -1989,11 +2017,11 @@ PAGES.dla = function () {
   const cy = E.companyYear(S.company, today());
   const bs = E.balanceSheet(S, { at: today() }); const ct = E.ctEstimate(S, cy);
   const reserves = bs.totals.equity - ((bs.equity.find(r => r.code === '3000') || {}).amount || 0) - ct.tax;
-  return head("Directors' loans", 'Money a director puts in or takes out, expenses paid personally, mileage owed and dividends credited all run through these accounts.', can.edit() ? `<button class="btn" data-act="dividend">Declare dividend</button><button class="btn primary" data-act="newJournal">${ico('plus')} Journal</button>` : (can.journal() ? `<button class="btn primary" data-act="newJournal">${ico('plus')} Journal</button>` : '')) + `
+  return head(isLtd() ? "Directors' loans" : "Owner's account", isLtd() ? 'Money a director puts in or takes out, expenses paid personally, mileage owed and dividends credited all run through these accounts.' : 'Money you put into the business, drawings you take out, and costs you paid personally.', can.edit() ? `${isLtd() ? '<button class="btn" data-act="dividend">Declare dividend</button>' : ''}<button class="btn primary" data-act="newJournal">${ico('plus')} Journal</button>` : (can.journal() ? `<button class="btn primary" data-act="newJournal">${ico('plus')} Journal</button>` : '')) + `
   <div class="stack">
-    <div class="tiles">${dirs.map(d => { const l = E.dla(S, d.dla); return `<div class="tile"><span class="k">${esc(d.name)} · ${d.share}% shareholder</span><span class="v${l.overdrawn ? ' neg' : ''}">${money(Math.abs(l.balance))}</span><span class="s">${l.balance >= 0 ? 'Company owes the director' : 'Director owes the company'}</span></div>`; }).join('')}
-      <div class="tile"><span class="k">Distributable reserves (estimate)</span><span class="v">${money(reserves)}</span><span class="s">Retained profit less corporation tax estimate</span></div></div>
-    ${dirs.some(d => E.dla(S, d.dla).overdrawn) ? callout('bad', 'An overdrawn director’s loan still outstanding nine months and one day after the year end triggers a section 455 tax charge, and a balance over £10,000 at any point is a benefit in kind. Clear it with a dividend, salary or repayment before then.') : ''}
+    <div class="tiles">${dirs.map(d => { const l = E.dla(S, d.dla); return `<div class="tile"><span class="k">${esc(d.name)}${isLtd() ? ` · ${d.share}% shareholder` : ''}</span><span class="v${l.overdrawn ? ' neg' : ''}">${money(Math.abs(l.balance))}</span><span class="s">${isLtd() ? (l.balance >= 0 ? 'Company owes the director' : 'Director owes the company') : (l.balance >= 0 ? 'More put in than drawn' : 'More drawn than put in')}</span></div>`; }).join('')}
+      ${isLtd() ? '' : '<!--'}<div class="tile"><span class="k">Distributable reserves (estimate)</span><span class="v">${money(reserves)}</span><span class="s">Retained profit less corporation tax estimate</span></div>${isLtd() ? '' : '-->'}</div>
+    ${isLtd() && dirs.some(d => E.dla(S, d.dla).overdrawn) ? callout('bad', 'An overdrawn director’s loan still outstanding nine months and one day after the year end triggers a section 455 tax charge, and a balance over £10,000 at any point is a benefit in kind. Clear it with a dividend, salary or repayment before then.') : ''}
     ${dirs.map(d => { const l = E.dla(S, d.dla); return `<section class="panel"><div class="panel-head"><h2>${esc(d.name)}</h2><span class="sub">${acctLabel(d.dla)}</span></div><div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Description</th><th class="num">Owed to director</th><th class="num">Owed to company</th><th class="num">Balance</th></tr></thead><tbody>
       ${l.lines.length ? l.lines.map(r => `<tr class="click" data-act="openDoc" data-id="${r.txnId}"><td>${fdate(r.date)}</td><td>${esc(r.desc || r.ref)}</td><td class="num">${r.credit ? money(r.credit) : ''}</td><td class="num">${r.debit ? money(r.debit) : ''}</td>${td$(r.balance)}</tr>`).join('') : `<tr><td colspan="5">${emptyState('No movements', '')}</td></tr>`}
       </tbody></table></div></section>`; }).join('')}
@@ -2051,7 +2079,7 @@ function pnlTable(p, single) {
 }
 PAGES.pnl = function () {
   const per = currentPeriod(); const p = E.pnl(S, per);
-  const ct = UI.div === 'all' ? E.ctEstimate(S, per) : null;
+  const ct = UI.div === 'all' && isLtd() ? E.ctEstimate(S, per) : null;
   return head('Profit & loss', `${fdate(per.from)} – ${fdate(per.to)} · by division`, `${divisionControl()}<button class="btn" data-act="csv" data-report="pnl">${ico('down')} CSV</button>`) + `
   <div class="stack">${periodControl()}
     <section class="panel"><div class="table-wrap">${pnlTable(p, UI.div === 'all' ? null : UI.div)}</div></section>
@@ -2294,8 +2322,8 @@ PAGES.notes = function () {
   const n = (k) => (S[k] || []).length;
   return head('System notes', 'How the books are kept, written for your accountant.', `<button class="btn" data-go="export">${ico('box')} Export pack</button>`) + `
   <div class="stack">
-    <section class="panel"><div class="panel-head"><h2>Company</h2></div><div class="panel-body"><dl class="kv">
-      <dt>Name</dt><dd>${esc(c.name)}</dd><dt>Company number</dt><dd>${esc(c.companyNo || '—')}</dd><dt>UTR</dt><dd>${esc(c.utr || '—')}</dd>
+    <section class="panel"><div class="panel-head"><h2>Business</h2></div><div class="panel-body"><dl class="kv">
+      <dt>Name</dt><dd>${esc(c.name)}</dd><dt>Status</dt><dd>${isLtd() ? 'Limited company' : `Sole trader (${esc(c.ownerName || 'James Brierley')}) until incorporation; the same books carry on into Digby's & Co Limited from the incorporation date`}</dd><dt>Books start</dt><dd>${fdate(c.booksStart || c.incorporated)}</dd><dt>Company number</dt><dd>${esc(c.companyNo || '—')}</dd><dt>UTR</dt><dd>${esc(c.utr || '—')}</dd>
       <dt>Registered office</dt><dd>${esc(c.regOffice || '—')}</dd><dt>Incorporated</dt><dd>${fdate(c.incorporated)}</dd><dt>Financial year</dt><dd>${fdate(cy.from)} – ${fdate(cy.to)}</dd>
       <dt>Shareholders</dt><dd>${(c.directors || []).map(d => `${esc(d.name)} ${d.share}%`).join(', ')}</dd>
       <dt>VAT</dt><dd>${c.vatRegistered ? `${esc(c.vatNumber)} · ${esc(c.vatScheme || 'standard')} scheme · from ${fdate(c.vatRegDate)} · stagger ${c.vatStagger || 1}` : 'Not registered'}</dd>
@@ -2509,7 +2537,7 @@ function invoiceDoc(inv) {
     ${isCN ? '' : `<div class="inv-pay"><div><h4 style="margin:0 0 4px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#8a807a">Payment details</h4>Account name: ${esc(c.bankAccountName || c.name)}<br>Sort code: ${esc(c.bankSort || '')}<br>Account number: ${esc(c.bankAccountNo || '')}<br>Reference: ${esc(inv.jobCode || inv.ref || '')}</div>
       <div><h4 style="margin:0 0 4px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#8a807a">Terms</h4>Payment due by ${fdate(inv.dueDate)}${c.paymentTerms ? ` (${c.paymentTerms} days)` : ''}.<br>${c.email ? esc(c.email) : ''}${c.phone ? '<br>' + esc(c.phone) : ''}</div></div>`}
     <div class="inv-thanks">Thank you for choosing Digby's.</div>
-    <div class="inv-legal">${esc(c.name)} · Registered in ${esc(c.registeredIn || 'England and Wales')} · Company no. ${esc(c.companyNo || '')} · Registered office: ${esc(c.regOffice || '')}${vat ? ' · VAT no. ' + esc(c.vatNumber || '') : ''}</div>
+    <div class="inv-legal">${isLtd() ? `${esc(c.name)} · Registered in ${esc(c.registeredIn || 'England and Wales')} · Company no. ${esc(c.companyNo || '')} · Registered office: ${esc(c.regOffice || '')}` : `${esc(c.ownerName || 'James Brierley')} trading as ${esc(c.tradingName || "Digby's")}${c.regOffice ? ' · ' + esc(c.regOffice) : ''}`}${vat ? ' · VAT no. ' + esc(c.vatNumber || '') : ''}</div>
   </div>`;
 }
 function invoiceStandalone(inv) {
@@ -2613,7 +2641,7 @@ ACT.newJournal = () => journalEditor(null);
 // ---------- bank reconciliation ----------
 async function postFromBank(bl, opts) {
   const amt = E.P(bl.amount); const type = amt > 0 ? 'receipt' : 'spend';
-  const active = vatOn(bl.date); const code = active ? (opts.vatCode || 'NR') : 'NR';
+  const active = vatOn(bl.date); const code = active ? (opts.vatCode || (ACC()[opts.account] || {}).vatDefault || 'NR') : 'NR';
   const c = E.calcLine(Math.abs(amt) / 100, code, true);
   const t = { id: uid(), type, date: bl.date, contactId: opts.contactId || null, description: opts.description || `${bl.counterparty} ${bl.reference || ''}`.trim(), division: opts.division || null, jobCode: opts.jobCode || null,
     bankAccount: bl.account || '1200', status: 'approved', inclusive: true, bankLineId: bl.id,
@@ -2662,17 +2690,72 @@ ACT.matchLine = (el) => {
     body: docs.length ? `<div class="panel"><div class="list">${docs.slice(0, 30).map(d => `<button class="list-row" data-m="${d.x.id}"><span class="grow"><span class="title">${esc(d.x.ref || '')} · ${esc(contactName(d.x.contactId))}</span><span class="meta">${fdate(d.x.date)} · ${divName(d.x.division)}</span></span><span class="num">${money(d.st.due)}</span>${d.st.due === Math.abs(amt) ? '<span class="pill good">Exact</span>' : ''}</button>`).join('')}</div></div>` : emptyState('Nothing open', `No ${amt > 0 ? 'invoices' : 'bills'} are waiting for payment.`) });
   sh.addEventListener('click', (e) => { const b = e.target.closest('[data-m]'); if (!b) return; const doc = S.txns.find(x => x.id === b.dataset.m); closeSheet(); paymentSheet(doc, bl); });
 };
+// Categories from the old finance app → account and division
+const LEGACY_MAP = {
+  'Event Catering': ['4000', 'events'], 'Private Chef': ['4000', 'events'], 'Chef for Hire': ['4000', 'events'], 'Butchery Contract': ['4020', 'butchery'],
+  'Direct Food Sales': ['4010', 'pies'], 'Capital Injection': ['2300', null],
+  'Food & Drink': ['5000', 'events'], 'Ingredients & Food Supplies': ['5000', 'events'], 'Equipment Purchase': ['8200', null], 'Staff Costs': ['5060', 'events'],
+  'Packaging & Consumables': ['5020', 'events'], 'Phone / Broadband': ['7500', null], 'Event-Specific Costs': ['5050', 'events'], 'Facility Rent': ['7100', null],
+  'Shared Utilities': ['7200', null], 'Insurance': ['7700', null], 'Repairs & Maintenance': ['7800', null], 'Professional Services': ['7600', null], 'Admin': ['8400', null]
+};
+// Starling's own spending categories, used only as a suggestion to accept
+const STARLING_MAP = {
+  FOOD_AND_DRINK: ['5000', 'events'], EQUIPMENT: ['8200', null], ADMIN: ['8400', null], PROFESSIONAL_SERVICES: ['7600', null], REPAIRS_AND_MAINTENANCE: ['7800', null],
+  WORKPLACE: ['7100', null], STAFF: ['5060', 'events'], MILEAGE_AND_OTHER_TRAVEL_COSTS: ['7304', null], MARKETING: ['8000', null], INSURANCE: ['7700', null],
+  FUEL: ['7300', null], TRANSPORT: ['7400', null], TRAVEL: ['7400', null], BUSINESS_ENTERTAINMENT: ['8400', null], INVENTORY: ['5000', 'events'],
+  REVENUE: ['4000', 'events'], INCOME: ['4000', 'events'], OTHER_INCOME: ['4900', null]
+};
+function legacyHint(bl, used) {
+  const amt = E.P(bl.amount); const L0 = S.legacy || [];
+  for (let i = 0; i < L0.length; i++) {
+    if (used.has(i)) continue; const h = L0[i];
+    if (h.date === bl.date && E.P(h.amount) === amt) { const m = LEGACY_MAP[h.category]; if (!m) return null; used.add(i); return { account: m[0], division: m[1], source: 'old app: ' + h.category }; }
+  }
+  return null;
+}
+async function importFeed(transactions) {
+  const start = S.company.booksStart || S.company.incorporated || '2026-04-06';
+  const have = new Set((S.bankLines || []).map(b => b.id)); const used = new Set();
+  const lines = [], txns = [];
+  for (const tx of transactions) {
+    if (!tx.feedItemUid || have.has(tx.feedItemUid) || tx.date < start) continue;
+    const bl = { id: tx.feedItemUid, account: '1200', date: tx.date, amount: E.r2(tx.amount), counterparty: tx.counterParty, reference: tx.reference, category: tx.starlingCat || '', status: 'unreconciled', txnId: null };
+    lines.push(bl);
+    if (lockedDate(bl.date)) continue;
+    // Code it straight away when we know how: a bank rule first, then how the old app categorised the same payment
+    const hay = `${bl.counterparty} ${bl.reference}`.toUpperCase(); const amt = E.P(bl.amount);
+    const rule = (S.rules || []).find(r => r.match && hay.includes(String(r.match).toUpperCase()) && (!r.direction || r.direction === 'any' || (r.direction === 'in') === (amt > 0)));
+    const plan = rule ? { account: rule.account, vatCode: rule.vatCode, division: rule.division, contactId: rule.contactId, source: 'rule: ' + rule.match } : legacyHint(bl, used);
+    if (!plan || !plan.account) continue;
+    const code = vatOn(bl.date) ? (plan.vatCode || (ACC()[plan.account] || {}).vatDefault || 'NR') : 'NR';
+    const c = E.calcLine(Math.abs(amt) / 100, code, true);
+    const t = { id: uid(), type: amt > 0 ? 'receipt' : 'spend', date: bl.date, contactId: plan.contactId || null, description: `${bl.counterparty} ${bl.reference || ''}`.trim(), division: plan.division || null,
+      bankAccount: '1200', status: 'approved', inclusive: true, bankLineId: bl.id, autoCoded: plan.source, createdAt: nowIso(), createdBy: store.user.email, updatedAt: nowIso(), updatedBy: store.user.email,
+      lines: [{ id: uid(), description: bl.reference || bl.counterparty, account: plan.account, vatCode: code, net: c.net, vat: c.vat, amount: Math.abs(amt) / 100, division: plan.division || null }] };
+    txns.push(t); bl.status = 'reconciled'; bl.txnId = t.id;
+  }
+  await store.saveMany('txns', txns);
+  await store.saveMany('bankLines', lines);
+  return { added: lines.length, coded: txns.length };
+}
 ACT.syncBank = async () => {
   if (store.mode === 'demo') { S.lastSync = nowIso(); toast('Bank feed is up to date'); render(); return; }
-  const from = E.addDays(today(), -45); const res = await store.starling(S.company.incorporated && S.company.incorporated > from ? S.company.incorporated : from, today());
-  const have = new Set((S.bankLines || []).map(b => b.id)); let n = 0;
-  for (const tx of (res.transactions || [])) {
-    if (!tx.feedItemUid || have.has(tx.feedItemUid)) continue;
-    if (S.company.incorporated && tx.date < S.company.incorporated) continue;
-    await store.save('bankLines', { id: tx.feedItemUid, account: '1200', date: tx.date, amount: E.r2(tx.amount), counterparty: tx.counterParty, reference: tx.reference, category: tx.starlingCat || '', status: 'unreconciled', txnId: null }); n++;
+  const start = S.company.booksStart || S.company.incorporated || '2026-04-06';
+  const latest = (S.bankLines || []).reduce((m, b) => b.date > m ? b.date : m, '');
+  const from = latest ? E.addDays(latest, -7) : start;
+  if (!latest) toast('Importing your bank history…');
+  const res = await store.starling(from < start ? start : from, today());
+  const r = await importFeed(res.transactions || []);
+  // First import: whatever was in the account before the books start becomes the opening balance
+  if (!latest && res.balance != null && !(S.txns || []).some(t => t.ref === 'OPENING-BANK')) {
+    const moved = (res.transactions || []).filter(t => t.date >= start).reduce((s, t) => s + E.P(t.amount), 0);
+    const opening = E.P(res.balance) - moved; const d = E.addDays(start, -1);
+    if (opening && !lockedDate(d)) await persist('txns', { id: uid(), type: 'journal', date: d, ref: 'OPENING-BANK', status: 'approved', description: `Opening bank balance at ${fdate(d)}`,
+      lines: [{ account: '1200', debit: opening > 0 ? E.L(opening) : 0, credit: opening < 0 ? E.L(-opening) : 0, description: 'Starling balance brought forward' }, { account: '3100', debit: opening < 0 ? E.L(-opening) : 0, credit: opening > 0 ? E.L(opening) : 0, description: 'Opening capital' }] });
   }
   if (res.balance != null) S.starlingBalance = res.balance;
-  S.lastSync = nowIso(); toast(n ? `${plural(n, 'new bank line')}` : 'Bank feed is up to date'); render();
+  S.lastSync = nowIso();
+  toast(r.added ? `${plural(r.added, 'bank line')} in · ${r.coded} coded automatically · ${r.added - r.coded} to check` : 'Bank feed is up to date'); render();
 };
 
 /* ============================================================
@@ -2905,7 +2988,8 @@ PAGES.settings = function () {
   let body = '';
   if (tab === 'company') {
     body = `<section class="panel"><div class="panel-body" style="padding-top:18px"><div class="grid cols-4" id="co-form">
-      ${field('Company name', inp('name', c.name, 'text', R), 2)}${field('Trading name', inp('tradingName', c.tradingName, 'text', R))}${field('Company number', inp('companyNo', c.companyNo, 'text', R))}
+      ${field('Business is', sel('entityType', [['sole_trader', 'Sole trader (until incorporation)'], ['ltd', 'Limited company']].map(([k, l]) => `<option value="${k}"${(c.entityType || 'ltd') === k ? ' selected' : ''}>${l}</option>`).join(''), D))}${field('Owner', inp('ownerName', c.ownerName || 'James Brierley', 'text', R))}${field('Books start', inp('booksStart', c.booksStart || c.incorporated || '', 'date', R))}<span></span>
+      ${field('Legal name', inp('name', c.name, 'text', R), 2)}${field('Trading name', inp('tradingName', c.tradingName, 'text', R))}${field('Company number', inp('companyNo', c.companyNo, 'text', R))}
       ${field('Registered office', inp('regOffice', c.regOffice, 'text', R), 3)}${field('Registered in', inp('registeredIn', c.registeredIn || 'England and Wales', 'text', R))}
       ${field('Corporation tax UTR', inp('utr', c.utr, 'text', R))}${field('Incorporated', inp('incorporated', c.incorporated, 'date', R))}${field('Financial year ends (MM-DD)', inp('yearEnd', c.yearEnd || '03-31', 'text', 'pattern="\\d{2}-\\d{2}" ' + R))}${field('Associated companies', inp('associatedCompanies', c.associatedCompanies || 0, 'number', 'min="0" ' + R))}
       ${field('Accounts email', inp('email', c.email, 'email', R))}${field('Phone', inp('phone', c.phone, 'tel', R))}${field('Invoice prefix', inp('invoicePrefix', c.invoicePrefix, 'text', R))}${field('Next invoice number', inp('nextInvoiceNo', c.nextInvoiceNo, 'number', R))}
@@ -2995,6 +3079,18 @@ ACT.editUser = (el) => {
 };
 
 // ---------- boot ----------
+function setupScreen() {
+  const sql = window.SETUP_SQL || '';
+  $('#root').innerHTML = `<div class="login"><div class="login-card" style="width:min(560px,100%)">
+    <div class="brand" style="padding:0"><div class="brand-mark">D</div><div><div class="brand-name">Digby's</div><div class="brand-sub">Accounts</div></div></div>
+    <h1>One-off database setup</h1>
+    <p style="margin:0">The tables for the new books are not in Supabase yet. Copy the script, paste it into the Supabase SQL editor and press Run. It only adds new tables; nothing existing is changed.</p>
+    <div class="head-actions"><button class="btn primary" id="cp-sql">Copy setup script</button><a class="btn" href="https://supabase.com/dashboard/project/jaajrllkozknilvmdezt/sql/new" target="_blank" rel="noopener">Open Supabase SQL editor</a></div>
+    <textarea class="input mono" id="sql-box" readonly style="height:160px;font-size:11px">${esc(sql)}</textarea>
+    <button class="btn" id="re-try">I've run it — reload</button></div></div>`;
+  $('#cp-sql').onclick = () => { const box = $('#sql-box'); (navigator.clipboard ? navigator.clipboard.writeText(sql) : Promise.reject()).then(() => toast('Copied')).catch(() => { box.focus(); box.select(); toast('Selected — press Cmd+C'); }); };
+  $('#re-try').onclick = () => location.reload();
+}
 function loginScreen(msg) {
   $('#root').innerHTML = `<div class="login"><form class="login-card" id="login">
     <div class="brand" style="padding:0"><div class="brand-mark">D</div><div><div class="brand-name">Digby's &amp; Co</div><div class="brand-sub">Accounts</div></div></div>
@@ -3003,18 +3099,19 @@ function loginScreen(msg) {
     ${field('Password', '<input class="input" id="lg-pass" type="password" autocomplete="current-password">')}
     <button class="btn primary" type="submit" style="height:40px">Sign in</button>
     <button class="btn plain" type="button" id="lg-link">Email me a sign-in link instead</button>
-    <p class="faint" style="margin:0;font-size:12.5px">Only people the owner has given access can sign in.</p></form></div>`;
+    <p class="faint" style="margin:0;font-size:12.5px">Use the same email and password as the Digby's staff app. Only people the owner has given access can sign in.</p></form></div>`;
   $('#login').addEventListener('submit', (e) => { e.preventDefault(); run(async () => { await store.signIn($('#lg-email').value.trim(), $('#lg-pass').value); await start(); }); });
   $('#lg-link').addEventListener('click', () => run(async () => { const em = $('#lg-email').value.trim(); if (!em) throw new Error('Enter your email first.'); await store.sendLink(em); toast('Check your email for the sign-in link'); }));
 }
 async function start() {
   $('#root').innerHTML = `<div class="login"><div class="muted">Loading the books…</div></div>`;
   try {
-    const ok = await store.init();
+    let ok;
+    try { ok = await store.init(); } catch (e) { if (e.setup) return setupScreen(); throw e; }
     if (!ok) return loginScreen();
     S = await store.load();
     S.company = S.company || {};
-    if (!S.company.name) S.company = Object.assign({ name: "Digby's & Co Limited", tradingName: "Digby's", yearEnd: '03-31', invoicePrefix: 'INV-', nextInvoiceNo: 188, paymentTerms: 30, directors: [{ name: 'James Brierley', share: 70, dla: '2300' }, { name: 'Mike Jeffries', share: 30, dla: '2301' }], vatRegistered: false, registeredIn: 'England and Wales' }, S.company);
+    if (!S.company.name) S.company = Object.assign({ entityType: 'sole_trader', name: "Digby's Events & Catering", tradingName: "Digby's", ownerName: 'James Brierley', booksStart: '2026-04-06', yearEnd: '04-05', invoicePrefix: 'INV-', nextInvoiceNo: 188, paymentTerms: 30, bankAccountName: 'James Brierley', directors: [{ name: 'James Brierley', share: 100, dla: '2300' }], vatRegistered: false, registeredIn: 'England and Wales' }, S.company);
     const hash = (location.hash || '').replace('#', ''); if (hash && PAGES[hash]) UI.page = hash;
     render();
     if (store.mode === 'live') ACT.syncBank().catch(e => toast(e.message, true));

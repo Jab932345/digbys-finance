@@ -8,7 +8,8 @@ PAGES.settings = function () {
   let body = '';
   if (tab === 'company') {
     body = `<section class="panel"><div class="panel-body" style="padding-top:18px"><div class="grid cols-4" id="co-form">
-      ${field('Company name', inp('name', c.name, 'text', R), 2)}${field('Trading name', inp('tradingName', c.tradingName, 'text', R))}${field('Company number', inp('companyNo', c.companyNo, 'text', R))}
+      ${field('Business is', sel('entityType', [['sole_trader', 'Sole trader (until incorporation)'], ['ltd', 'Limited company']].map(([k, l]) => `<option value="${k}"${(c.entityType || 'ltd') === k ? ' selected' : ''}>${l}</option>`).join(''), D))}${field('Owner', inp('ownerName', c.ownerName || 'James Brierley', 'text', R))}${field('Books start', inp('booksStart', c.booksStart || c.incorporated || '', 'date', R))}<span></span>
+      ${field('Legal name', inp('name', c.name, 'text', R), 2)}${field('Trading name', inp('tradingName', c.tradingName, 'text', R))}${field('Company number', inp('companyNo', c.companyNo, 'text', R))}
       ${field('Registered office', inp('regOffice', c.regOffice, 'text', R), 3)}${field('Registered in', inp('registeredIn', c.registeredIn || 'England and Wales', 'text', R))}
       ${field('Corporation tax UTR', inp('utr', c.utr, 'text', R))}${field('Incorporated', inp('incorporated', c.incorporated, 'date', R))}${field('Financial year ends (MM-DD)', inp('yearEnd', c.yearEnd || '03-31', 'text', 'pattern="\\d{2}-\\d{2}" ' + R))}${field('Associated companies', inp('associatedCompanies', c.associatedCompanies || 0, 'number', 'min="0" ' + R))}
       ${field('Accounts email', inp('email', c.email, 'email', R))}${field('Phone', inp('phone', c.phone, 'tel', R))}${field('Invoice prefix', inp('invoicePrefix', c.invoicePrefix, 'text', R))}${field('Next invoice number', inp('nextInvoiceNo', c.nextInvoiceNo, 'number', R))}
@@ -98,6 +99,18 @@ ACT.editUser = (el) => {
 };
 
 // ---------- boot ----------
+function setupScreen() {
+  const sql = window.SETUP_SQL || '';
+  $('#root').innerHTML = `<div class="login"><div class="login-card" style="width:min(560px,100%)">
+    <div class="brand" style="padding:0"><div class="brand-mark">D</div><div><div class="brand-name">Digby's</div><div class="brand-sub">Accounts</div></div></div>
+    <h1>One-off database setup</h1>
+    <p style="margin:0">The tables for the new books are not in Supabase yet. Copy the script, paste it into the Supabase SQL editor and press Run. It only adds new tables; nothing existing is changed.</p>
+    <div class="head-actions"><button class="btn primary" id="cp-sql">Copy setup script</button><a class="btn" href="https://supabase.com/dashboard/project/jaajrllkozknilvmdezt/sql/new" target="_blank" rel="noopener">Open Supabase SQL editor</a></div>
+    <textarea class="input mono" id="sql-box" readonly style="height:160px;font-size:11px">${esc(sql)}</textarea>
+    <button class="btn" id="re-try">I've run it — reload</button></div></div>`;
+  $('#cp-sql').onclick = () => { const box = $('#sql-box'); (navigator.clipboard ? navigator.clipboard.writeText(sql) : Promise.reject()).then(() => toast('Copied')).catch(() => { box.focus(); box.select(); toast('Selected — press Cmd+C'); }); };
+  $('#re-try').onclick = () => location.reload();
+}
 function loginScreen(msg) {
   $('#root').innerHTML = `<div class="login"><form class="login-card" id="login">
     <div class="brand" style="padding:0"><div class="brand-mark">D</div><div><div class="brand-name">Digby's &amp; Co</div><div class="brand-sub">Accounts</div></div></div>
@@ -106,18 +119,19 @@ function loginScreen(msg) {
     ${field('Password', '<input class="input" id="lg-pass" type="password" autocomplete="current-password">')}
     <button class="btn primary" type="submit" style="height:40px">Sign in</button>
     <button class="btn plain" type="button" id="lg-link">Email me a sign-in link instead</button>
-    <p class="faint" style="margin:0;font-size:12.5px">Only people the owner has given access can sign in.</p></form></div>`;
+    <p class="faint" style="margin:0;font-size:12.5px">Use the same email and password as the Digby's staff app. Only people the owner has given access can sign in.</p></form></div>`;
   $('#login').addEventListener('submit', (e) => { e.preventDefault(); run(async () => { await store.signIn($('#lg-email').value.trim(), $('#lg-pass').value); await start(); }); });
   $('#lg-link').addEventListener('click', () => run(async () => { const em = $('#lg-email').value.trim(); if (!em) throw new Error('Enter your email first.'); await store.sendLink(em); toast('Check your email for the sign-in link'); }));
 }
 async function start() {
   $('#root').innerHTML = `<div class="login"><div class="muted">Loading the books…</div></div>`;
   try {
-    const ok = await store.init();
+    let ok;
+    try { ok = await store.init(); } catch (e) { if (e.setup) return setupScreen(); throw e; }
     if (!ok) return loginScreen();
     S = await store.load();
     S.company = S.company || {};
-    if (!S.company.name) S.company = Object.assign({ name: "Digby's & Co Limited", tradingName: "Digby's", yearEnd: '03-31', invoicePrefix: 'INV-', nextInvoiceNo: 188, paymentTerms: 30, directors: [{ name: 'James Brierley', share: 70, dla: '2300' }, { name: 'Mike Jeffries', share: 30, dla: '2301' }], vatRegistered: false, registeredIn: 'England and Wales' }, S.company);
+    if (!S.company.name) S.company = Object.assign({ entityType: 'sole_trader', name: "Digby's Events & Catering", tradingName: "Digby's", ownerName: 'James Brierley', booksStart: '2026-04-06', yearEnd: '04-05', invoicePrefix: 'INV-', nextInvoiceNo: 188, paymentTerms: 30, bankAccountName: 'James Brierley', directors: [{ name: 'James Brierley', share: 100, dla: '2300' }], vatRegistered: false, registeredIn: 'England and Wales' }, S.company);
     const hash = (location.hash || '').replace('#', ''); if (hash && PAGES[hash]) UI.page = hash;
     render();
     if (store.mode === 'live') ACT.syncBank().catch(e => toast(e.message, true));

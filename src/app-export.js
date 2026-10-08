@@ -171,8 +171,8 @@ PAGES.notes = function () {
   const n = (k) => (S[k] || []).length;
   return head('System notes', 'How the books are kept, written for your accountant.', `<button class="btn" data-go="export">${ico('box')} Export pack</button>`) + `
   <div class="stack">
-    <section class="panel"><div class="panel-head"><h2>Company</h2></div><div class="panel-body"><dl class="kv">
-      <dt>Name</dt><dd>${esc(c.name)}</dd><dt>Company number</dt><dd>${esc(c.companyNo || '—')}</dd><dt>UTR</dt><dd>${esc(c.utr || '—')}</dd>
+    <section class="panel"><div class="panel-head"><h2>Business</h2></div><div class="panel-body"><dl class="kv">
+      <dt>Name</dt><dd>${esc(c.name)}</dd><dt>Status</dt><dd>${isLtd() ? 'Limited company' : `Sole trader (${esc(c.ownerName || 'James Brierley')}) until incorporation; the same books carry on into Digby's & Co Limited from the incorporation date`}</dd><dt>Books start</dt><dd>${fdate(c.booksStart || c.incorporated)}</dd><dt>Company number</dt><dd>${esc(c.companyNo || '—')}</dd><dt>UTR</dt><dd>${esc(c.utr || '—')}</dd>
       <dt>Registered office</dt><dd>${esc(c.regOffice || '—')}</dd><dt>Incorporated</dt><dd>${fdate(c.incorporated)}</dd><dt>Financial year</dt><dd>${fdate(cy.from)} – ${fdate(cy.to)}</dd>
       <dt>Shareholders</dt><dd>${(c.directors || []).map(d => `${esc(d.name)} ${d.share}%`).join(', ')}</dd>
       <dt>VAT</dt><dd>${c.vatRegistered ? `${esc(c.vatNumber)} · ${esc(c.vatScheme || 'standard')} scheme · from ${fdate(c.vatRegDate)} · stagger ${c.vatStagger || 1}` : 'Not registered'}</dd>

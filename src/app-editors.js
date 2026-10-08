@@ -175,7 +175,7 @@ function invoiceDoc(inv) {
     ${isCN ? '' : `<div class="inv-pay"><div><h4 style="margin:0 0 4px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#8a807a">Payment details</h4>Account name: ${esc(c.bankAccountName || c.name)}<br>Sort code: ${esc(c.bankSort || '')}<br>Account number: ${esc(c.bankAccountNo || '')}<br>Reference: ${esc(inv.jobCode || inv.ref || '')}</div>
       <div><h4 style="margin:0 0 4px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#8a807a">Terms</h4>Payment due by ${fdate(inv.dueDate)}${c.paymentTerms ? ` (${c.paymentTerms} days)` : ''}.<br>${c.email ? esc(c.email) : ''}${c.phone ? '<br>' + esc(c.phone) : ''}</div></div>`}
     <div class="inv-thanks">Thank you for choosing Digby's.</div>
-    <div class="inv-legal">${esc(c.name)} · Registered in ${esc(c.registeredIn || 'England and Wales')} · Company no. ${esc(c.companyNo || '')} · Registered office: ${esc(c.regOffice || '')}${vat ? ' · VAT no. ' + esc(c.vatNumber || '') : ''}</div>
+    <div class="inv-legal">${isLtd() ? `${esc(c.name)} · Registered in ${esc(c.registeredIn || 'England and Wales')} · Company no. ${esc(c.companyNo || '')} · Registered office: ${esc(c.regOffice || '')}` : `${esc(c.ownerName || 'James Brierley')} trading as ${esc(c.tradingName || "Digby's")}${c.regOffice ? ' · ' + esc(c.regOffice) : ''}`}${vat ? ' · VAT no. ' + esc(c.vatNumber || '') : ''}</div>
   </div>`;
 }
 function invoiceStandalone(inv) {
@@ -279,7 +279,7 @@ ACT.newJournal = () => journalEditor(null);
 // ---------- bank reconciliation ----------
 async function postFromBank(bl, opts) {
   const amt = E.P(bl.amount); const type = amt > 0 ? 'receipt' : 'spend';
-  const active = vatOn(bl.date); const code = active ? (opts.vatCode || 'NR') : 'NR';
+  const active = vatOn(bl.date); const code = active ? (opts.vatCode || (ACC()[opts.account] || {}).vatDefault || 'NR') : 'NR';
   const c = E.calcLine(Math.abs(amt) / 100, code, true);
   const t = { id: uid(), type, date: bl.date, contactId: opts.contactId || null, description: opts.description || `${bl.counterparty} ${bl.reference || ''}`.trim(), division: opts.division || null, jobCode: opts.jobCode || null,
     bankAccount: bl.account || '1200', status: 'approved', inclusive: true, bankLineId: bl.id,
@@ -328,15 +328,70 @@ ACT.matchLine = (el) => {
     body: docs.length ? `<div class="panel"><div class="list">${docs.slice(0, 30).map(d => `<button class="list-row" data-m="${d.x.id}"><span class="grow"><span class="title">${esc(d.x.ref || '')} · ${esc(contactName(d.x.contactId))}</span><span class="meta">${fdate(d.x.date)} · ${divName(d.x.division)}</span></span><span class="num">${money(d.st.due)}</span>${d.st.due === Math.abs(amt) ? '<span class="pill good">Exact</span>' : ''}</button>`).join('')}</div></div>` : emptyState('Nothing open', `No ${amt > 0 ? 'invoices' : 'bills'} are waiting for payment.`) });
   sh.addEventListener('click', (e) => { const b = e.target.closest('[data-m]'); if (!b) return; const doc = S.txns.find(x => x.id === b.dataset.m); closeSheet(); paymentSheet(doc, bl); });
 };
+// Categories from the old finance app → account and division
+const LEGACY_MAP = {
+  'Event Catering': ['4000', 'events'], 'Private Chef': ['4000', 'events'], 'Chef for Hire': ['4000', 'events'], 'Butchery Contract': ['4020', 'butchery'],
+  'Direct Food Sales': ['4010', 'pies'], 'Capital Injection': ['2300', null],
+  'Food & Drink': ['5000', 'events'], 'Ingredients & Food Supplies': ['5000', 'events'], 'Equipment Purchase': ['8200', null], 'Staff Costs': ['5060', 'events'],
+  'Packaging & Consumables': ['5020', 'events'], 'Phone / Broadband': ['7500', null], 'Event-Specific Costs': ['5050', 'events'], 'Facility Rent': ['7100', null],
+  'Shared Utilities': ['7200', null], 'Insurance': ['7700', null], 'Repairs & Maintenance': ['7800', null], 'Professional Services': ['7600', null], 'Admin': ['8400', null]
+};
+// Starling's own spending categories, used only as a suggestion to accept
+const STARLING_MAP = {
+  FOOD_AND_DRINK: ['5000', 'events'], EQUIPMENT: ['8200', null], ADMIN: ['8400', null], PROFESSIONAL_SERVICES: ['7600', null], REPAIRS_AND_MAINTENANCE: ['7800', null],
+  WORKPLACE: ['7100', null], STAFF: ['5060', 'events'], MILEAGE_AND_OTHER_TRAVEL_COSTS: ['7304', null], MARKETING: ['8000', null], INSURANCE: ['7700', null],
+  FUEL: ['7300', null], TRANSPORT: ['7400', null], TRAVEL: ['7400', null], BUSINESS_ENTERTAINMENT: ['8400', null], INVENTORY: ['5000', 'events'],
+  REVENUE: ['4000', 'events'], INCOME: ['4000', 'events'], OTHER_INCOME: ['4900', null]
+};
+function legacyHint(bl, used) {
+  const amt = E.P(bl.amount); const L0 = S.legacy || [];
+  for (let i = 0; i < L0.length; i++) {
+    if (used.has(i)) continue; const h = L0[i];
+    if (h.date === bl.date && E.P(h.amount) === amt) { const m = LEGACY_MAP[h.category]; if (!m) return null; used.add(i); return { account: m[0], division: m[1], source: 'old app: ' + h.category }; }
+  }
+  return null;
+}
+async function importFeed(transactions) {
+  const start = S.company.booksStart || S.company.incorporated || '2026-04-06';
+  const have = new Set((S.bankLines || []).map(b => b.id)); const used = new Set();
+  const lines = [], txns = [];
+  for (const tx of transactions) {
+    if (!tx.feedItemUid || have.has(tx.feedItemUid) || tx.date < start) continue;
+    const bl = { id: tx.feedItemUid, account: '1200', date: tx.date, amount: E.r2(tx.amount), counterparty: tx.counterParty, reference: tx.reference, category: tx.starlingCat || '', status: 'unreconciled', txnId: null };
+    lines.push(bl);
+    if (lockedDate(bl.date)) continue;
+    // Code it straight away when we know how: a bank rule first, then how the old app categorised the same payment
+    const hay = `${bl.counterparty} ${bl.reference}`.toUpperCase(); const amt = E.P(bl.amount);
+    const rule = (S.rules || []).find(r => r.match && hay.includes(String(r.match).toUpperCase()) && (!r.direction || r.direction === 'any' || (r.direction === 'in') === (amt > 0)));
+    const plan = rule ? { account: rule.account, vatCode: rule.vatCode, division: rule.division, contactId: rule.contactId, source: 'rule: ' + rule.match } : legacyHint(bl, used);
+    if (!plan || !plan.account) continue;
+    const code = vatOn(bl.date) ? (plan.vatCode || (ACC()[plan.account] || {}).vatDefault || 'NR') : 'NR';
+    const c = E.calcLine(Math.abs(amt) / 100, code, true);
+    const t = { id: uid(), type: amt > 0 ? 'receipt' : 'spend', date: bl.date, contactId: plan.contactId || null, description: `${bl.counterparty} ${bl.reference || ''}`.trim(), division: plan.division || null,
+      bankAccount: '1200', status: 'approved', inclusive: true, bankLineId: bl.id, autoCoded: plan.source, createdAt: nowIso(), createdBy: store.user.email, updatedAt: nowIso(), updatedBy: store.user.email,
+      lines: [{ id: uid(), description: bl.reference || bl.counterparty, account: plan.account, vatCode: code, net: c.net, vat: c.vat, amount: Math.abs(amt) / 100, division: plan.division || null }] };
+    txns.push(t); bl.status = 'reconciled'; bl.txnId = t.id;
+  }
+  await store.saveMany('txns', txns);
+  await store.saveMany('bankLines', lines);
+  return { added: lines.length, coded: txns.length };
+}
 ACT.syncBank = async () => {
   if (store.mode === 'demo') { S.lastSync = nowIso(); toast('Bank feed is up to date'); render(); return; }
-  const from = E.addDays(today(), -45); const res = await store.starling(S.company.incorporated && S.company.incorporated > from ? S.company.incorporated : from, today());
-  const have = new Set((S.bankLines || []).map(b => b.id)); let n = 0;
-  for (const tx of (res.transactions || [])) {
-    if (!tx.feedItemUid || have.has(tx.feedItemUid)) continue;
-    if (S.company.incorporated && tx.date < S.company.incorporated) continue;
-    await store.save('bankLines', { id: tx.feedItemUid, account: '1200', date: tx.date, amount: E.r2(tx.amount), counterparty: tx.counterParty, reference: tx.reference, category: tx.starlingCat || '', status: 'unreconciled', txnId: null }); n++;
+  const start = S.company.booksStart || S.company.incorporated || '2026-04-06';
+  const latest = (S.bankLines || []).reduce((m, b) => b.date > m ? b.date : m, '');
+  const from = latest ? E.addDays(latest, -7) : start;
+  if (!latest) toast('Importing your bank history…');
+  const res = await store.starling(from < start ? start : from, today());
+  const r = await importFeed(res.transactions || []);
+  // First import: whatever was in the account before the books start becomes the opening balance
+  if (!latest && res.balance != null && !(S.txns || []).some(t => t.ref === 'OPENING-BANK')) {
+    const moved = (res.transactions || []).filter(t => t.date >= start).reduce((s, t) => s + E.P(t.amount), 0);
+    const opening = E.P(res.balance) - moved; const d = E.addDays(start, -1);
+    if (opening && !lockedDate(d)) await persist('txns', { id: uid(), type: 'journal', date: d, ref: 'OPENING-BANK', status: 'approved', description: `Opening bank balance at ${fdate(d)}`,
+      lines: [{ account: '1200', debit: opening > 0 ? E.L(opening) : 0, credit: opening < 0 ? E.L(-opening) : 0, description: 'Starling balance brought forward' }, { account: '3100', debit: opening < 0 ? E.L(-opening) : 0, credit: opening > 0 ? E.L(opening) : 0, description: 'Opening capital' }] });
   }
   if (res.balance != null) S.starlingBalance = res.balance;
-  S.lastSync = nowIso(); toast(n ? `${plural(n, 'new bank line')}` : 'Bank feed is up to date'); render();
+  S.lastSync = nowIso();
+  toast(r.added ? `${plural(r.added, 'bank line')} in · ${r.coded} coded automatically · ${r.added - r.coded} to check` : 'Bank feed is up to date'); render();
 };

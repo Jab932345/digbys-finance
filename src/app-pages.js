@@ -49,7 +49,7 @@ PAGES.home = function () {
     if (s.firstAidExpiry && s.firstAidExpiry <= soon) att.push(['staff', 'warn', `${s.name}: first aid certificate ${s.firstAidExpiry < t ? 'expired' : 'expires'} ${fdate(s.firstAidExpiry)}`, '']);
     if (s.foodHygieneExpiry && s.foodHygieneExpiry <= soon) att.push(['staff', 'warn', `${s.name}: food hygiene ${s.foodHygieneExpiry < t ? 'expired' : 'expires'} ${fdate(s.foodHygieneExpiry)}`, '']);
   });
-  (S.company.directors || []).forEach(d => { const l = E.dla(S, d.dla); if (l.overdrawn) att.push(['dla', 'bad', `${d.name}'s loan account is overdrawn`, money(-l.balance)]); });
+  if (isLtd()) (S.company.directors || []).forEach(d => { const l = E.dla(S, d.dla); if (l.overdrawn) att.push(['dla', 'bad', `${d.name}'s loan account is overdrawn`, money(-l.balance)]); });
 
   const greeting = (() => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; })();
   const first = (store.user.name || '').split(' ')[0];
@@ -62,7 +62,7 @@ PAGES.home = function () {
       <button class="tile" data-go="bills"><span class="k">You owe suppliers</span><span class="v">${money(cred.totals.total)}</span><span class="s">${plural(cred.rows.length, 'supplier')}</span></button>
       ${vatTile}
       <button class="tile" data-go="pnl"><span class="k">${UI.div === 'all' ? 'Profit this year' : divName(UI.div) + ' profit this year'}</span><span class="v${colVal(p.totals.netProfit) < 0 ? ' neg' : ''}">${money(colVal(p.totals.netProfit))}</span><span class="s">Sales ${money0(colVal(p.totals.income))} · before tax</span></button>
-      <button class="tile" data-go="notes"><span class="k">Corporation tax estimate</span><span class="v">${money(ct.tax)}</span><span class="s">${esc(ct.band)}</span></button>
+      ${isLtd() ? `<button class="tile" data-go="pnl"><span class="k">Corporation tax estimate</span><span class="v">${money(ct.tax)}</span><span class="s">${esc(ct.band)}</span></button>` : (() => { const o = E.dla(S, '2300').balance; return `<button class="tile" data-go="dla"><span class="k">Owner's account</span><span class="v">${money(Math.abs(o))}</span><span class="s">${o >= 0 ? 'Put in by you, net of drawings' : 'Drawn out, net of money put in'}</span></button>`; })()}
     </div>
     <div class="row-2">
       <section class="panel"><div class="panel-head"><h2>Net profit by month</h2><span class="sub">${UI.div === 'all' ? 'All divisions' : divName(UI.div)} · before tax</span></div><div class="panel-body">${monthChart(cy)}</div></section>
@@ -174,6 +174,8 @@ function suggestFor(bl) {
   const hay = `${bl.counterparty || ''} ${bl.reference || ''}`.toUpperCase();
   const rule = (S.rules || []).find(r => r.match && hay.includes(String(r.match).toUpperCase()) && (!r.direction || r.direction === 'any' || (r.direction === 'in') === (amt > 0)));
   if (rule) return { kind: 'rule', rule, text: `Rule: ${acctLabel(rule.account)} · ${vatShort(rule.vatCode)}${rule.division ? ' · ' + divName(rule.division) : ''}` };
+  const sm = typeof STARLING_MAP !== 'undefined' && STARLING_MAP[(bl.category || '').toUpperCase()];
+  if (sm && (amt > 0) === (sm[0] < '5000' && sm[0] >= '4000')) return { kind: 'rule', rule: { account: sm[0], division: sm[1], vatCode: null }, text: `Starling category: ${acctLabel(sm[0])}${sm[1] ? ' · ' + divName(sm[1]) : ''}` };
   return null;
 }
 PAGES.bank = function () {
@@ -322,11 +324,11 @@ PAGES.dla = function () {
   const cy = E.companyYear(S.company, today());
   const bs = E.balanceSheet(S, { at: today() }); const ct = E.ctEstimate(S, cy);
   const reserves = bs.totals.equity - ((bs.equity.find(r => r.code === '3000') || {}).amount || 0) - ct.tax;
-  return head("Directors' loans", 'Money a director puts in or takes out, expenses paid personally, mileage owed and dividends credited all run through these accounts.', can.edit() ? `<button class="btn" data-act="dividend">Declare dividend</button><button class="btn primary" data-act="newJournal">${ico('plus')} Journal</button>` : (can.journal() ? `<button class="btn primary" data-act="newJournal">${ico('plus')} Journal</button>` : '')) + `
+  return head(isLtd() ? "Directors' loans" : "Owner's account", isLtd() ? 'Money a director puts in or takes out, expenses paid personally, mileage owed and dividends credited all run through these accounts.' : 'Money you put into the business, drawings you take out, and costs you paid personally.', can.edit() ? `${isLtd() ? '<button class="btn" data-act="dividend">Declare dividend</button>' : ''}<button class="btn primary" data-act="newJournal">${ico('plus')} Journal</button>` : (can.journal() ? `<button class="btn primary" data-act="newJournal">${ico('plus')} Journal</button>` : '')) + `
   <div class="stack">
-    <div class="tiles">${dirs.map(d => { const l = E.dla(S, d.dla); return `<div class="tile"><span class="k">${esc(d.name)} · ${d.share}% shareholder</span><span class="v${l.overdrawn ? ' neg' : ''}">${money(Math.abs(l.balance))}</span><span class="s">${l.balance >= 0 ? 'Company owes the director' : 'Director owes the company'}</span></div>`; }).join('')}
-      <div class="tile"><span class="k">Distributable reserves (estimate)</span><span class="v">${money(reserves)}</span><span class="s">Retained profit less corporation tax estimate</span></div></div>
-    ${dirs.some(d => E.dla(S, d.dla).overdrawn) ? callout('bad', 'An overdrawn director’s loan still outstanding nine months and one day after the year end triggers a section 455 tax charge, and a balance over £10,000 at any point is a benefit in kind. Clear it with a dividend, salary or repayment before then.') : ''}
+    <div class="tiles">${dirs.map(d => { const l = E.dla(S, d.dla); return `<div class="tile"><span class="k">${esc(d.name)}${isLtd() ? ` · ${d.share}% shareholder` : ''}</span><span class="v${l.overdrawn ? ' neg' : ''}">${money(Math.abs(l.balance))}</span><span class="s">${isLtd() ? (l.balance >= 0 ? 'Company owes the director' : 'Director owes the company') : (l.balance >= 0 ? 'More put in than drawn' : 'More drawn than put in')}</span></div>`; }).join('')}
+      ${isLtd() ? '' : '<!--'}<div class="tile"><span class="k">Distributable reserves (estimate)</span><span class="v">${money(reserves)}</span><span class="s">Retained profit less corporation tax estimate</span></div>${isLtd() ? '' : '-->'}</div>
+    ${isLtd() && dirs.some(d => E.dla(S, d.dla).overdrawn) ? callout('bad', 'An overdrawn director’s loan still outstanding nine months and one day after the year end triggers a section 455 tax charge, and a balance over £10,000 at any point is a benefit in kind. Clear it with a dividend, salary or repayment before then.') : ''}
     ${dirs.map(d => { const l = E.dla(S, d.dla); return `<section class="panel"><div class="panel-head"><h2>${esc(d.name)}</h2><span class="sub">${acctLabel(d.dla)}</span></div><div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Description</th><th class="num">Owed to director</th><th class="num">Owed to company</th><th class="num">Balance</th></tr></thead><tbody>
       ${l.lines.length ? l.lines.map(r => `<tr class="click" data-act="openDoc" data-id="${r.txnId}"><td>${fdate(r.date)}</td><td>${esc(r.desc || r.ref)}</td><td class="num">${r.credit ? money(r.credit) : ''}</td><td class="num">${r.debit ? money(r.debit) : ''}</td>${td$(r.balance)}</tr>`).join('') : `<tr><td colspan="5">${emptyState('No movements', '')}</td></tr>`}
       </tbody></table></div></section>`; }).join('')}
@@ -384,7 +386,7 @@ function pnlTable(p, single) {
 }
 PAGES.pnl = function () {
   const per = currentPeriod(); const p = E.pnl(S, per);
-  const ct = UI.div === 'all' ? E.ctEstimate(S, per) : null;
+  const ct = UI.div === 'all' && isLtd() ? E.ctEstimate(S, per) : null;
   return head('Profit & loss', `${fdate(per.from)} – ${fdate(per.to)} · by division`, `${divisionControl()}<button class="btn" data-act="csv" data-report="pnl">${ico('down')} CSV</button>`) + `
   <div class="stack">${periodControl()}
     <section class="panel"><div class="table-wrap">${pnlTable(p, UI.div === 'all' ? null : UI.div)}</div></section>
