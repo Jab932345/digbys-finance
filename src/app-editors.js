@@ -361,9 +361,9 @@ async function importFeed(transactions) {
     lines.push(bl);
     if (lockedDate(bl.date)) continue;
     // Code it straight away when we know how: a bank rule first, then how the old app categorised the same payment
-    const hay = `${bl.counterparty} ${bl.reference}`.toUpperCase(); const amt = E.P(bl.amount);
-    const rule = (S.rules || []).find(r => r.match && hay.includes(String(r.match).toUpperCase()) && (!r.direction || r.direction === 'any' || (r.direction === 'in') === (amt > 0)));
-    const plan = rule ? { account: rule.account, vatCode: rule.vatCode, division: rule.division, contactId: rule.contactId, source: 'rule: ' + rule.match } : legacyHint(bl, used);
+    const amt = E.P(bl.amount);
+    const rule = findRule(bl);
+    const plan = rule && rule.action !== 'manual' ?{ account: rule.account, vatCode: rule.vatCode, division: rule.division, contactId: rule.contactId, source: 'rule: ' + rule.match } : legacyHint(bl, used);
     if (!plan || !plan.account) continue;
     const code = vatOn(bl.date) ? (plan.vatCode || (ACC()[plan.account] || {}).vatDefault || 'NR') : 'NR';
     const c = E.calcLine(Math.abs(amt) / 100, code, true);

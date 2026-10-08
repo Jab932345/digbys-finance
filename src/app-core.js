@@ -268,7 +268,7 @@ const NAV = [
   { group: null, items: [['home', 'Home', 'home']] },
   { group: 'Sales', items: [['invoices', 'Invoices', 'invoice'], ['customers', 'Customers', 'people']] },
   { group: 'Purchases', items: [['bills', 'Bills', 'bill'], ['suppliers', 'Suppliers', 'people']] },
-  { group: 'Bank', items: [['bank', 'Bank & reconcile', 'bank']] },
+  { group: 'Bank', items: [['bank', 'Bank & reconcile', 'bank'], ['payees', 'Payees & payers', 'people']] },
   { group: 'Tax', items: [['vat', 'VAT', 'vat']] },
   { group: 'People', items: [['payroll', 'Payroll', 'pay'], ['staff', 'Staff', 'staff'], ['mileage', 'Mileage', 'car']] },
   { group: 'Company', items: [['dla', 'Owner & directors', 'loan'], ['assets', 'Fixed assets', 'asset'], ['jobs', 'Job codes', 'tag']] },
@@ -278,6 +278,7 @@ const NAV = [
 ];
 function navBadge(page) {
   if (page === 'bank') { const n = (S.bankLines || []).filter(b => b.status === 'unreconciled').length; return n ? `<span class="badge">${n}</span>` : ''; }
+  if (page === 'payees') { const n = payeeGroups().filter(g => !g.set).length; return n ? `<span class="badge">${n}</span>` : ''; }
   if (page === 'invoices') { const n = (S.txns || []).filter(t => t.type === 'invoice' && E.docStatus(S, t, today()).key === 'overdue').length; return n ? `<span class="badge">${n}</span>` : ''; }
   return '';
 }

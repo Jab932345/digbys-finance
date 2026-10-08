@@ -171,9 +171,8 @@ function suggestFor(bl) {
   const refHit = docs.find(x => x.ref && ((bl.reference || '') + ' ' + (bl.counterparty || '')).toUpperCase().includes(String(x.ref).toUpperCase()) && E.docStatus(S, x, t).due === Math.abs(amt));
   const amtHit = refHit || docs.find(x => E.docStatus(S, x, t).due === Math.abs(amt));
   if (amtHit) return { kind: 'match', doc: amtHit, text: `Matches ${amtHit.type === 'invoice' ? 'invoice' : 'bill'} ${amtHit.ref || ''} · ${contactName(amtHit.contactId)}` };
-  const hay = `${bl.counterparty || ''} ${bl.reference || ''}`.toUpperCase();
-  const rule = (S.rules || []).find(r => r.match && hay.includes(String(r.match).toUpperCase()) && (!r.direction || r.direction === 'any' || (r.direction === 'in') === (amt > 0)));
-  if (rule) return { kind: 'rule', rule, text: `Rule: ${acctLabel(rule.account)} · ${vatShort(rule.vatCode)}${rule.division ? ' · ' + divName(rule.division) : ''}` };
+  const rule = findRule(bl);
+  if (rule && rule.action !== 'manual') return { kind: 'rule', rule, text: `Rule: ${acctLabel(rule.account)} · ${vatShort(rule.vatCode)}${rule.division ? ' · ' + divName(rule.division) : ''}` };
   const sm = typeof STARLING_MAP !== 'undefined' && STARLING_MAP[(bl.category || '').toUpperCase()];
   if (sm && (amt > 0) === (sm[0] < '5000' && sm[0] >= '4000')) return { kind: 'rule', rule: { account: sm[0], division: sm[1], vatCode: null }, text: `Starling category: ${acctLabel(sm[0])}${sm[1] ? ' · ' + divName(sm[1]) : ''}` };
   return null;
@@ -214,6 +213,139 @@ PAGES.bank = function () {
   }
   return head('Bank & reconcile', 'The Starling feed comes in automatically. Each line is matched to an invoice or bill, or coded to an account with its VAT and division.') + `
     <div class="stack"><div class="seg">${tabs.map(([k, l]) => `<button data-act="tab" data-page="bank" data-id="${k}" class="${tab === k ? 'on' : ''}">${l}${k === 'reconcile' && unrec.length ? ` <span class="badge">${unrec.length}</span>` : ''}</button>`).join('')}</div>${body}</div>`;
+};
+
+// ---------- Payees & payers ----------
+// Every name on the bank feed, grouped, with how its payments are coded. Setting a payee saves a bank rule
+// and recodes that payee's lines in one go, so future payments from the same name code themselves.
+const payeeKey = (s) => String(s || 'Unknown').toUpperCase().replace(/\s+/g, ' ').trim();
+// The most specific rule wins: longest match text, then a one-direction rule over an either-way one
+function findRule(bl) {
+  const hay = `${bl.counterparty || ''} ${bl.reference || ''}`.toUpperCase(); const inn = E.P(bl.amount) > 0;
+  let best = null;
+  for (const r of S.rules || []) {
+    const m = String(r.match || '').toUpperCase(); if (!m || !hay.includes(m)) continue;
+    if (r.direction && r.direction !== 'any' && (r.direction === 'in') !== inn) continue;
+    const bm = best ? String(best.match).length : -1;
+    if (m.length > bm || (m.length === bm && (best.direction || 'any') === 'any' && r.direction && r.direction !== 'any')) best = r;
+  }
+  return best;
+}
+function payeeGroups() {
+  const m = new Map(); const tx = new Map((S.txns || []).map(t => [t.id, t]));
+  for (const bl of S.bankLines || []) {
+    if (bl.status === 'excluded') continue;
+    const k = payeeKey(bl.counterparty);
+    let g = m.get(k); if (!g) { g = { key: k, name: bl.counterparty || 'Unknown', lines: [], inN: 0, inP: 0, outN: 0, outP: 0, first: bl.date, last: bl.date }; m.set(k, g); }
+    g.lines.push(bl); const a = E.P(bl.amount);
+    if (a > 0) { g.inN++; g.inP += a; } else { g.outN++; g.outP -= a; }
+    if (bl.date < g.first) g.first = bl.date; if (bl.date > g.last) g.last = bl.date;
+  }
+  for (const g of m.values()) {
+    g.lines.sort((a, b) => b.date.localeCompare(a.date));
+    g.dirs = []; if (g.inN) g.dirs.push('in'); if (g.outN) g.dirs.push('out');
+    g.uses = {}; g.unrec = 0; g.matched = 0; g.matchedBy = { in: 0, out: 0 };
+    for (const bl of g.lines) {
+      const d = E.P(bl.amount) > 0 ? 'in' : 'out'; const t = bl.txnId && tx.get(bl.txnId);
+      if (!t) { g.unrec++; continue; }
+      if (t.type === 'customer_payment' || t.type === 'supplier_payment') { g.matched++; g.matchedBy[d]++; continue; }
+      const ls = t.lines || []; const k = ls.length > 1 ? 'split' : `${(ls[0] || {}).account || ''}|${t.division || (ls[0] || {}).division || ''}`;
+      const u = g.uses[d] = g.uses[d] || {}; u[k] = (u[k] || 0) + 1;
+    }
+    g.rules = {}; g.dirs.forEach(d => { g.rules[d] = findRule(g.lines.find(b => (E.P(b.amount) > 0) === (d === 'in'))); });
+    // settled when each direction has a rule, or every payment that way is already matched to an invoice or bill
+    g.set = g.dirs.every(d => g.rules[d] || g.matchedBy[d] === (d === 'in' ? g.inN : g.outN));
+    g.total = g.inP + g.outP;
+  }
+  return [...m.values()];
+}
+function payeeCoding(g) {
+  const all = {}; Object.values(g.uses).forEach(u => Object.entries(u).forEach(([k, n]) => { all[k] = (all[k] || 0) + n; }));
+  const keys = Object.keys(all).sort((a, b) => all[b] - all[a]);
+  const lab = (k) => { if (k === 'split') return 'Split'; const [a, d] = k.split('|'); return `${acctName(a)}${d ? ' · ' + divName(d) : ''}`; };
+  const parts = [];
+  if (keys.length === 1) parts.push(lab(keys[0])); else if (keys.length > 1) parts.push(`Mixed: ${keys.slice(0, 2).map(lab).join(', ')}${keys.length > 2 ? ` +${keys.length - 2}` : ''}`);
+  if (g.matched) parts.push(`${g.matched} matched to invoices/bills`);
+  if (g.unrec) parts.push(`${g.unrec} not coded`);
+  if (Object.values(g.rules).some(r => r && r.action === 'manual')) parts.push('decided each time');
+  return parts.join(' · ') || 'Not coded';
+}
+PAGES.payees = function () {
+  const f = UI.tab.payees || 'todo'; const all = payeeGroups();
+  const todo = all.filter(g => !g.set); const done = all.filter(g => g.set);
+  const q = payeeKey(UI.filter.payees || ''); const base = f === 'todo' ? todo : f === 'set' ? done : all;
+  const list = (q && q !== 'UNKNOWN' ? base.filter(g => g.key.includes(q)) : base).sort((a, b) => b.total - a.total);
+  const tabs = [['todo', 'To decide', todo.length], ['set', 'Set', done.length], ['all', 'All', all.length]];
+  return head('Payees & payers', 'Everyone who has paid into or out of the Starling account since the books started. Set each one once: its payments are coded now and every future payment codes itself.',
+    `<button class="btn" data-act="payeesCsv">${ico('down')} CSV</button>`) + `
+  <div class="stack"><div class="seg">${tabs.map(([k, l, n]) => `<button data-act="tab" data-page="payees" data-id="${k}" class="${f === k ? 'on' : ''}">${l} <span class="badge">${n}</span></button>`).join('')}</div>
+  <section class="panel"><div class="panel-head"><input class="input" style="max-width:280px" type="search" placeholder="Find a name" value="${esc(UI.filter.payees || '')}" data-on="payeeFind" aria-label="Find a name"><span class="sub">${plural(list.length, 'name')}</span></div>
+  <div class="list">${list.length ? list.map(g => `<div class="list-row" style="flex-wrap:wrap">
+    <div class="grow" style="min-width:200px"><div class="title">${esc(g.name)}</div><div class="meta">${[g.inN ? `${g.inN} in` : '', g.outN ? `${g.outN} out` : ''].filter(Boolean).join(' · ')} · ${fdate(g.first)}${g.first !== g.last ? ' – ' + fdate(g.last) : ''} · ${esc(payeeCoding(g))}</div></div>
+    <div class="num" style="min-width:96px;font-weight:650;color:var(--good)">${g.inN ? money(g.inP) : ''}</div>
+    <div class="num" style="min-width:96px;font-weight:650">${g.outN ? money(-g.outP) : ''}</div>
+    ${can.edit() ? `<button class="btn sm ${g.set ? '' : 'primary'}" data-act="setPayee" data-id="${esc(g.key)}">${g.set ? 'Change' : 'Set'}</button>` : ''}
+  </div>`).join('') : emptyState(f === 'todo' ? 'Nothing to decide' : 'No names yet', f === 'todo' ? 'Every name on the bank feed has a setting.' : 'Sync the bank to bring in payments.')}</div></section></div>`;
+};
+INPUT.payeeFind = (el) => { UI.filter.payees = el.value; render(); };
+ACT.payeesCsv = () => {
+  const rows = payeeGroups().sort((a, b) => b.total - a.total);
+  return saveFile('payees.csv', toCSV([{ h: 'Name', v: 'name' }, { h: 'Payments in', v: 'inN' }, { h: 'Money in', v: g => dec(g.inP) }, { h: 'Payments out', v: 'outN' }, { h: 'Money out', v: g => dec(g.outP) },
+    { h: 'First', v: 'first' }, { h: 'Last', v: 'last' }, { h: 'Coded as', v: g => payeeCoding(g) }, { h: 'Set', v: g => g.set ? 'Yes' : 'No' },
+    { h: 'Recent references', v: g => [...new Set(g.lines.map(b => b.reference).filter(Boolean))].slice(0, 5).join(' | ') }], rows), 'text/csv');
+};
+ACT.setPayee = (el) => {
+  const g = payeeGroups().find(x => x.key === el.dataset.id); if (!g) return;
+  const def = (d) => {
+    const r = g.rules[d]; if (r) return { account: r.action === 'manual' ? '__manual' : r.account, division: r.division || '' };
+    const u = g.uses[d] || {}; const top = Object.keys(u).filter(k => k !== 'split').sort((a, b) => u[b] - u[a])[0];
+    if (top) { const [a, dv] = top.split('|'); return { account: a, division: dv }; }
+    const bl = g.lines.find(b => (E.P(b.amount) > 0) === (d === 'in')); const sm = STARLING_MAP[(bl.category || '').toUpperCase()];
+    if (sm && (d === 'in') === (sm[0] >= '4000' && sm[0] < '5000')) return { account: sm[0], division: sm[1] || '' };
+    return d === 'in' ? { account: '4000', division: 'events' } : { account: '5000', division: '' };
+  };
+  const section = (d) => { const v = def(d); const n = d === 'in' ? g.inN : g.outN; const p = d === 'in' ? g.inP : g.outP;
+    return `<div style="grid-column:1/-1;font-weight:650;margin-top:4px">${d === 'in' ? 'Money in' : 'Money out'} · ${plural(n, 'payment')} · ${money(p)}</div>
+    ${field('Account', sel('acc_' + d, `<option value="__manual"${v.account === '__manual' ? ' selected' : ''}>Decide each payment myself</option>` + accountOptions(v.account === '__manual' ? '' : v.account)))}${field('Division', sel('div_' + d, divOptions(v.division)))}`; };
+  const recent = g.lines.slice(0, 6).map(b => `<div class="list-row"><span class="grow"><span class="title" style="font-weight:500">${esc(b.reference || '—')}</span><span class="meta">${fdate(b.date)}</span></span><span class="num">${money(E.P(b.amount))}</span></div>`).join('');
+  const sh = openSheet({ title: g.name, size: 'narrow', noFocus: true,
+    body: `<div class="grid cols-2">${g.dirs.map(section).join('')}</div>
+    <p class="muted" style="margin:12px 0 4px;font-size:13px">Recent payments</p><div class="panel"><div class="list">${recent}</div></div>
+    <p class="faint" style="margin:10px 0 0;font-size:12.5px">Saving recodes this name's payments, except ones matched to an invoice or bill, split across accounts, or in a locked period.</p>`,
+    foot: `<button class="btn" data-c="x">Cancel</button><button class="btn primary" data-c="ok">Save & apply</button>` });
+  g.dirs.forEach(d => sh.querySelector(`[data-k="acc_${d}"]`).addEventListener('change', (e) => { const dv = incomeDivision(e.target.value); if (dv) sh.querySelector(`[data-k="div_${d}"]`).value = dv; }));
+  sh.querySelector('[data-c="x"]').onclick = closeSheet;
+  sh.querySelector('[data-c="ok"]').onclick = () => run(async () => {
+    const f = readForm(sh); let changed = 0, skipped = 0; const now = nowIso();
+    for (const d of g.dirs) {
+      const acc = f['acc_' + d]; const div = f['div_' + d] || null; const manual = acc === '__manual';
+      const ex = g.rules[d] && payeeKey(g.rules[d].match) === g.key && g.rules[d].direction === d ? g.rules[d] : null;
+      const rule = Object.assign(ex ? clone(ex) : { id: uid(), match: g.key, direction: d }, { action: manual ? 'manual' : 'code', account: manual ? '' : acc, vatCode: manual ? null : ((ACC()[acc] || {}).vatDefault || null), division: manual ? null : div });
+      await store.save('rules', rule);
+      if (manual) continue;
+      const txs = [], bls = [];
+      for (const bl of g.lines.filter(b => (E.P(b.amount) > 0) === (d === 'in'))) {
+        if (lockedDate(bl.date)) { skipped++; continue; }
+        const code = vatOn(bl.date) ? (rule.vatCode || 'NR') : 'NR';
+        const t = bl.txnId && (S.txns || []).find(x => x.id === bl.txnId);
+        if (!t) {
+          if (bl.status !== 'unreconciled') continue;
+          const amt = E.P(bl.amount); const c = E.calcLine(Math.abs(amt) / 100, code, true);
+          const nt = { id: uid(), type: amt > 0 ? 'receipt' : 'spend', date: bl.date, contactId: null, description: `${bl.counterparty} ${bl.reference || ''}`.trim(), division: div, bankAccount: bl.account || '1200', status: 'approved', inclusive: true, bankLineId: bl.id,
+            autoCoded: 'payee: ' + g.name, createdAt: now, createdBy: store.user.email, updatedAt: now, updatedBy: store.user.email,
+            lines: [{ id: uid(), description: bl.reference || bl.counterparty, account: acc, vatCode: code, net: c.net, vat: c.vat, amount: Math.abs(amt) / 100, division: div }] };
+          txs.push(nt); bls.push(Object.assign(bl, { status: 'reconciled', txnId: nt.id })); changed++;
+        } else if ((t.type === 'receipt' || t.type === 'spend') && (t.lines || []).length === 1) {
+          const l = t.lines[0]; if (l.account === acc && (t.division || null) === div) continue;
+          const c = E.calcLine(l.amount, code, true);
+          Object.assign(l, { account: acc, division: div, vatCode: code, net: c.net, vat: c.vat });
+          Object.assign(t, { division: div, autoCoded: 'payee: ' + g.name, updatedAt: now, updatedBy: store.user.email }); txs.push(t); changed++;
+        }
+      }
+      await store.saveMany('txns', txs); await store.saveMany('bankLines', bls);
+    }
+    closeSheet(); toast(`${g.name} set · ${plural(changed, 'payment')} coded${skipped ? ` · ${skipped} in the locked period left alone` : ''}`); render();
+  });
 };
 
 // ---------- VAT ----------
