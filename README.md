@@ -1,13 +1,14 @@
-# Digby's & Co Limited — books
+# Digby's books
 
-Double-entry accounts for the limited company: invoicing, bills, Starling bank reconciliation, VAT returns, payroll journals, staff records, mileage, directors' loans and an export pack for the accountant. Every line carries a division (Events, Pies, Butchery, Hire).
+The business accounts: invoicing, bills, the Starling bank feed, VAT, payroll journals, staff records, mileage and an export pack for the accountant. Every line carries a division (Events, Pies, Butchery, Hire).
+
+Runs as the sole trader from 6 April 2026. On incorporation, switch to the limited company in Settings; the same books carry on.
 
 | File | What it is |
 |---|---|
-| `index.html` | The live app. Sign-in required (Supabase Auth). Built from `src/`. |
-| `demo.html` | The same app on a fictional company, for showing the accountant. No sign-in, no real data. |
-| `sole-trader.html` | The previous sole-trader finance app, kept for the pre-incorporation records. |
-| `api/starling.js` | Vercel function that reads the Starling feed. Needs `STARLING_TOKEN`; only signed-in members can call it. |
-| `sql/digbys-co-ltd-schema.sql` | Run once in Supabase (project `jaajrllkozknilvmdezt`) before the live app is used. |
+| `index.html` | The app. Sign in with the Digby's staff-app login. Built from `src/`. |
+| `api/bank.js` | Reads the Starling feed for signed-in users. Needs `STARLING_TOKEN`. |
+| `sql/digbys-co-ltd-schema.sql` | One-off database setup. The app shows it with a copy button if it hasn't been run. |
+| `sole-trader.html`, `api/starling.js` | The previous finance app, kept until everything is checked in the new one. |
 
 Edit `src/`, then `python3 build.py` and `node tests/engine.test.js`.

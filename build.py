@@ -41,7 +41,6 @@ full = lambda title, mode: f'''<!doctype html>
 </body></html>
 '''
 (root / 'index.html').write_text(full(title_live, 'live'))
-(root / 'demo.html').write_text(full(title_demo, 'demo'))
 (root / 'dist').mkdir(exist_ok=True)
 # Artifact page: the publisher wraps it in its own document skeleton
 (root / 'dist' / 'artifact-demo.html').write_text(f'''<title>{title_demo}</title>
@@ -51,4 +50,4 @@ full = lambda title, mode: f'''<!doctype html>
 </style>
 {body('demo')}
 ''')
-print('built index.html, demo.html, dist/artifact-demo.html')
+print('built index.html')
