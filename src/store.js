@@ -88,7 +88,13 @@
         if (!s) return false;
         const email = (s.user.email || '').toLowerCase();
         const { data, error } = await sb.from('co_users').select('email,data,role,name').eq('email', email).maybeSingle();
-        if (error) { if (/co_users|schema cache|does not exist|PGRST20/i.test((error.message || '') + (error.code || ''))) { const e = new Error('setup'); e.setup = true; throw e; } throw error; }
+        if (error) {
+          const code = error.code || '', msg = error.message || '';
+          const missing = code === 'PGRST205' || code === '42P01' || /could not find the table|does not exist/i.test(msg);
+          const denied = code === '42501' || /permission denied/i.test(msg);
+          if (missing || denied) { const e = new Error(msg || code); e.setup = missing ? 'missing' : 'grants'; e.detail = `${code} ${msg}`.trim(); throw e; }
+          throw new Error(msg || String(error));
+        }
         if (!data) throw new Error(`${email} is signed in but has not been given access. Ask the account owner to add this email under Settings → Users.`);
         this.user = { email, name: data.name || (data.data || {}).name || email, role: data.role };
         return true;

@@ -112,6 +112,7 @@ begin
   foreach t in array array['co_users','co_settings','co_accounts','co_contacts','co_job_codes','co_txns','co_bank_lines','co_staff','co_payroll_runs','co_mileage','co_vat_returns','co_bank_rules','co_audit'] loop
     execute format('alter table %I enable row level security', t);
     execute format('revoke all on %I from anon', t);
+    execute format('grant select, insert, update, delete on %I to authenticated', t);
     execute format('drop policy if exists co_read on %I', t);
     execute format('drop policy if exists co_write on %I', t);
   end loop;
@@ -150,6 +151,8 @@ create policy co_write on co_txns for all to authenticated
   with check (co_role() in ('owner','director','bookkeeper') or (co_role() = 'accountant' and type = 'journal'));
 -- co_audit has no write policy: only the trigger above can add to it
 revoke insert, update, delete, truncate on co_audit from anon, authenticated;
+grant usage on schema public to authenticated;
+grant execute on function co_role(), co_lock_date() to authenticated;
 
 -- ---------- starting data ----------
 insert into co_users (email, name, role) values ('james@digbysevents.co.uk', 'James Brierley', 'owner') on conflict (email) do nothing;

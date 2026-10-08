@@ -99,17 +99,30 @@ ACT.editUser = (el) => {
 };
 
 // ---------- boot ----------
-function setupScreen() {
-  const sql = window.SETUP_SQL || '';
+function setupScreen(kind, detail) {
+  const grants = kind === 'grants';
+  const sql = grants ? (window.SETUP_GRANTS || '') : (window.SETUP_SQL || '');
   $('#root').innerHTML = `<div class="login"><div class="login-card" style="width:min(560px,100%)">
     <div class="brand" style="padding:0"><div class="brand-mark">D</div><div><div class="brand-name">Digby's</div><div class="brand-sub">Accounts</div></div></div>
-    <h1>One-off database setup</h1>
-    <p style="margin:0">The tables for the new books are not in Supabase yet. Copy the script, paste it into the Supabase SQL editor and press Run. It only adds new tables; nothing existing is changed.</p>
-    <div class="head-actions"><button class="btn primary" id="cp-sql">Copy setup script</button><a class="btn" href="https://supabase.com/dashboard/project/jaajrllkozknilvmdezt/sql/new" target="_blank" rel="noopener">Open Supabase SQL editor</a></div>
-    <textarea class="input mono" id="sql-box" readonly style="height:160px;font-size:11px">${esc(sql)}</textarea>
-    <button class="btn" id="re-try">I've run it — reload</button></div></div>`;
+    <h1>${grants ? 'One more step' : 'One-off database setup'}</h1>
+    <p style="margin:0">${grants
+      ? 'The tables are in. Supabase has not given signed-in users permission to use them. Copy this short fix, paste it into the SQL editor and press Run.'
+      : 'The tables for the new books are not in Supabase yet. Copy the script, paste it into the Supabase SQL editor and press Run. It only adds new tables; nothing existing is changed.'}</p>
+    <div class="head-actions"><button class="btn primary" id="cp-sql">${grants ? 'Copy fix' : 'Copy setup script'}</button><a class="btn" href="https://supabase.com/dashboard/project/jaajrllkozknilvmdezt/sql/new" target="_blank" rel="noopener">Open Supabase SQL editor</a></div>
+    <textarea class="input mono" id="sql-box" readonly style="height:${grants ? 110 : 160}px;font-size:11px">${esc(sql)}</textarea>
+    <div id="setup-msg"></div>
+    <button class="btn" id="re-try">I've run it — check again</button>
+    <p class="faint" style="margin:0;font-size:11.5px">Supabase said: ${esc(detail || '')}</p></div></div>`;
   $('#cp-sql').onclick = () => { const box = $('#sql-box'); (navigator.clipboard ? navigator.clipboard.writeText(sql) : Promise.reject()).then(() => toast('Copied')).catch(() => { box.focus(); box.select(); toast('Selected — press Cmd+C'); }); };
-  $('#re-try').onclick = () => location.reload();
+  $('#re-try').onclick = async () => {
+    const b = $('#re-try'); b.disabled = true; b.textContent = 'Checking…';
+    try { await store.init(); start(); }
+    catch (e) {
+      if (e.setup && e.setup !== kind) return setupScreen(e.setup, e.detail);
+      b.disabled = false; b.textContent = "I've run it — check again";
+      $('#setup-msg').innerHTML = callout('bad', `Still not working. Supabase said: ${esc(e.detail || e.message)}`);
+    }
+  };
 }
 function loginScreen(msg) {
   $('#root').innerHTML = `<div class="login"><form class="login-card" id="login">
@@ -127,7 +140,7 @@ async function start() {
   $('#root').innerHTML = `<div class="login"><div class="muted">Loading the books…</div></div>`;
   try {
     let ok;
-    try { ok = await store.init(); } catch (e) { if (e.setup) return setupScreen(); throw e; }
+    try { ok = await store.init(); } catch (e) { if (e.setup) return setupScreen(e.setup, e.detail); throw e; }
     if (!ok) return loginScreen();
     S = await store.load();
     S.company = S.company || {};
