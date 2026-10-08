@@ -1003,7 +1003,14 @@ table.t td.wrap { white-space: normal; min-width: 180px; }
         if (!state.accounts.length) state.accounts = root.Engine.DEFAULT_ACCOUNTS.map(a => Object.assign({}, a));
         // Read-only links into the rest of the Digby's system, all in the same database.
         // Old finance app categories become coding hints; CPS job codes appear in every job picker.
-        const opt = async (table, cols) => { try { const { data, error } = await sb.from(table).select(cols || '*').limit(5000); return error ? [] : (data || []); } catch (e) { return []; } };
+        // Some of these tables are readable with the public key but not granted to signed-in users, so fall back to it
+        let anonSb = null;
+        const tryRead = async (client, table, cols) => { try { const { data, error } = await client.from(table).select(cols || '*').limit(5000); return error ? null : (data || []); } catch (e) { return null; } };
+        const opt = async (table, cols) => {
+          const r = await tryRead(sb, table, cols); if (r) return r;
+          anonSb = anonSb || root.supabase.createClient(cfg.url, cfg.anonKey, { auth: { persistSession: false, autoRefreshToken: false, storageKey: 'digbys-public' } });
+          return (await tryRead(anonSb, table, cols)) || [];
+        };
         const [li, le, cj] = await Promise.all([opt('finance_income', 'date,amount,stream,description'), opt('finance_expenses', 'date,amount,category,description'), opt('job_codes')]);
         state.legacy = li.map(r => ({ date: r.date, amount: +r.amount, category: r.stream, desc: r.description }))
           .concat(le.map(r => ({ date: r.date, amount: -Math.abs(+r.amount), category: r.category, desc: r.description })));
