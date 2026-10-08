@@ -1,88 +1,76 @@
-// Vercel serverless function — Starling API proxy
-// Sits between the browser app and Starling to keep your token server-side
-// Deploy to: api/starling.js alongside index.html
+// Vercel serverless function: Starling Bank proxy for Digby's & Co Limited.
+// Keeps the token on the server. Set STARLING_TOKEN in Vercel → Settings → Environment Variables.
+// The token must belong to the company's own Starling business account, with these scopes:
+// account:read, account-list:read, balance:read, transaction:read.
+//
+// GET /api/starling?from=YYYY-MM-DD&to=YYYY-MM-DD
+// → { accountName, currency, balance, clearedBalance, fromDate, toDate, count, transactions: [...] }
+// Only settled transactions are returned, so the feed reconciles to the cleared balance.
 
 export default async function handler(req, res) {
-  // CORS — allow requests from your own Vercel domain
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') { res.status(200).end(); return; }
+  res.setHeader('Cache-Control', 'no-store');
+  if (req.method !== 'GET') { res.status(405).json({ error: 'Use GET' }); return; }
 
   const token = process.env.STARLING_TOKEN;
-  if (!token) {
-    return res.status(500).json({ error: 'STARLING_TOKEN environment variable not set' });
-  }
+  if (!token) { res.status(500).json({ error: 'STARLING_TOKEN is not set in Vercel' }); return; }
+
+  // Only people signed in to the books, and listed in co_users, may read the bank feed
+  const SUPA_URL = process.env.SUPABASE_URL || 'https://jaajrllkozknilvmdezt.supabase.co';
+  const SUPA_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImphYWpybGxrb3prbmlsdm1kZXp0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwMjQxNDAsImV4cCI6MjA5MjYwMDE0MH0.09U5cba3JxRmysrn2X3TxPqr-q6jJE4QhyeKQwEK03M';
+  const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (!bearer) { res.status(401).json({ error: 'Sign in to read the bank feed' }); return; }
+  const who = await fetch(`${SUPA_URL}/auth/v1/user`, { headers: { apikey: SUPA_KEY, Authorization: `Bearer ${bearer}` } });
+  if (!who.ok) { res.status(401).json({ error: 'Your session has expired. Sign in again.' }); return; }
+  const user = await who.json();
+  const member = await fetch(`${SUPA_URL}/rest/v1/co_users?select=role&email=eq.${encodeURIComponent((user.email || '').toLowerCase())}`, { headers: { apikey: SUPA_KEY, Authorization: `Bearer ${bearer}` } });
+  const rows = member.ok ? await member.json() : [];
+  if (!rows.length) { res.status(403).json({ error: 'This account does not have access to the books' }); return; }
+
+  const api = async (path) => {
+    const r = await fetch('https://api.starlingbank.com/api/v2' + path, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+    if (!r.ok) { const detail = await r.text(); const e = new Error(`Starling ${r.status} on ${path.split('?')[0]}`); e.status = r.status; e.detail = detail; throw e; }
+    return r.json();
+  };
+  const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
 
   try {
-    // Step 1: get account UID
-    const accountsRes = await fetch('https://api.starlingbank.com/api/v2/accounts', {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
-    });
-    if (!accountsRes.ok) {
-      const txt = await accountsRes.text();
-      return res.status(accountsRes.status).json({ error: 'Starling accounts error', detail: txt });
-    }
-    const accountsData = await accountsRes.json();
-    const account = accountsData.accounts?.[0];
-    if (!account) return res.status(404).json({ error: 'No accounts found' });
+    const { accounts } = await api('/accounts');
+    const account = (accounts || []).find(a => a.accountType === 'PRIMARY') || (accounts || [])[0];
+    if (!account) { res.status(404).json({ error: 'No Starling account found for this token' }); return; }
 
-    const accountUid = account.accountUid;
-    const categoryUid = account.defaultCategory;
+    const today = new Date().toISOString().slice(0, 10);
+    const from = isDate(req.query.from) ? req.query.from : new Date(Date.now() - 45 * 864e5).toISOString().slice(0, 10);
+    const to = isDate(req.query.to) ? req.query.to : today;
+    const min = new Date(from + 'T00:00:00Z').toISOString();
+    const max = new Date(to + 'T23:59:59.999Z').toISOString();
 
-    // Step 2: work out date range
-    // Default: from start of current tax year to today
-    // Tax year starts 6 April — determine which one
-    const now = new Date();
-    const taxYearStart = now.getMonth() >= 3   // April = month 3
-      ? new Date(now.getFullYear(), 3, 6)       // after Apr 6 this year
-      : new Date(now.getFullYear() - 1, 3, 6); // before Apr 6, use last year
-    
-    // Allow override via query params: ?from=2025-04-06&to=2026-01-23
-    const fromDate = req.query.from
-      ? new Date(req.query.from)
-      : taxYearStart;
-    const toDate = req.query.to
-      ? new Date(req.query.to)
-      : now;
+    const [feed, bal] = await Promise.all([
+      api(`/feed/account/${account.accountUid}/category/${account.defaultCategory}/transactions-between?minTransactionTimestamp=${encodeURIComponent(min)}&maxTransactionTimestamp=${encodeURIComponent(max)}`),
+      api(`/accounts/${account.accountUid}/balance`)
+    ]);
 
-    const minTime = fromDate.toISOString();
-    const maxTime = toDate.toISOString();
+    const transactions = (feed.feedItems || [])
+      .filter(i => i.status === 'SETTLED')
+      .map(i => ({
+        feedItemUid: i.feedItemUid,
+        date: (i.transactionTime || i.settlementTime || '').slice(0, 10),
+        counterParty: i.counterPartyName || '',
+        reference: i.reference || '',
+        txType: i.source || '',
+        amount: (i.direction === 'IN' ? 1 : -1) * (i.amount?.minorUnits || 0) / 100,
+        starlingCat: i.spendingCategory || ''
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
 
-    // Step 3: fetch transactions
-    const txUrl = `https://api.starlingbank.com/api/v2/feed/account/${accountUid}/category/${categoryUid}/transactions-between?minTransactionTimestamp=${minTime}&maxTransactionTimestamp=${maxTime}`;
-    const txRes = await fetch(txUrl, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
-    });
-    if (!txRes.ok) {
-      const txt = await txRes.text();
-      return res.status(txRes.status).json({ error: 'Starling transactions error', detail: txt });
-    }
-    const txData = await txRes.json();
-
-    // Step 4: normalise to the same shape the app already understands
-    const transactions = (txData.feedItems || []).map(item => ({
-      date: item.transactionTime?.slice(0, 10) || '',
-      counterParty: item.counterPartyName || item.reference || '',
-      reference: item.reference || '',
-      txType: item.source || '',
-      amount: item.direction === 'IN'
-        ? item.amount?.minorUnits / 100
-        : -(item.amount?.minorUnits / 100),
-      starlingCat: item.spendingCategory || '',
-      feedItemUid: item.feedItemUid || ''
-    }));
-
-    return res.status(200).json({
-      accountName: account.name || 'Main Account',
+    const minor = (x) => (x && typeof x.minorUnits === 'number') ? x.minorUnits / 100 : null;
+    res.status(200).json({
+      accountName: account.name || 'Starling business account',
       currency: account.currency || 'GBP',
-      fromDate: fromDate.toISOString().slice(0, 10),
-      toDate: toDate.toISOString().slice(0, 10),
-      count: transactions.length,
-      transactions
+      balance: minor(bal.clearedBalance) ?? minor(bal.totalClearedBalance),
+      effectiveBalance: minor(bal.effectiveBalance),
+      fromDate: from, toDate: to, count: transactions.length, transactions
     });
-
-  } catch (err) {
-    return res.status(500).json({ error: 'Proxy error', detail: err.message });
+  } catch (e) {
+    res.status(e.status && e.status < 500 ? 502 : 500).json({ error: e.message, detail: e.detail ? String(e.detail).slice(0, 500) : undefined });
   }
 }
