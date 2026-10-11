@@ -253,7 +253,19 @@
     return rows;
   }
 
-  const accountMap = (state) => { const m = {}; (state.accounts || DEFAULT_ACCOUNTS).forEach(a => { m[a.code] = a; }); return m; };
+  // A sole trader has no director's loan or retained earnings: the owner's account is capital.
+  // Names are relabelled for display and export only; stored accounts keep their codes and names.
+  const ownerCodes = (state) => { const c = state.company || {}; return c.entityType === 'sole_trader' ? [((c.directors || [])[0] || {}).dla || '2300'] : []; };
+  const accountMap = (state) => {
+    const m = {}; (state.accounts || DEFAULT_ACCOUNTS).forEach(a => { m[a.code] = a; });
+    const c = state.company || {};
+    if (c.entityType === 'sole_trader') {
+      const ren = { '3100': 'Capital brought forward' };
+      ownerCodes(state).forEach(code => { ren[code] = `Owner's capital account — ${c.ownerName || ((c.directors || [])[0] || {}).name || 'owner'}`; });
+      Object.keys(ren).forEach(code => { if (m[code]) m[code] = Object.assign({}, m[code], { name: ren[code] }); });
+    }
+    return m;
+  };
   const isPL = (type) => type === 'income' || type === 'cos' || type === 'overhead';
 
   function trialBalance(state, opts) {
@@ -301,11 +313,12 @@
     const fixed = pick(['fixed']).map(r => ({ code: r.code, name: r.name, amount: r.balance }));
     const current = pick(['current_asset', 'bank']).map(r => ({ code: r.code, name: r.name, amount: r.balance }));
     // VAT accounts net into one figure so the sheet reads like a set of accounts
-    const liabRows = pick(['current_liability']);
+    const own = ownerCodes(state);
+    const liabRows = pick(['current_liability']).filter(r => !own.includes(r.code));
     const vatNet = liabRows.filter(r => ['2200', '2201', '2202'].includes(r.code)).reduce((s, r) => s - r.balance, 0);
     const liabilities = liabRows.filter(r => !['2200', '2201', '2202'].includes(r.code)).map(r => ({ code: r.code, name: r.name, amount: -r.balance }));
     if (vatNet !== 0) liabilities.unshift({ code: '2200-2202', name: 'VAT', amount: vatNet });
-    const equityRows = pick(['equity']).map(r => ({ code: r.code, name: r.name, amount: -r.balance }));
+    const equityRows = pick(['equity']).concat(tb.rows.filter(r => own.includes(r.code))).map(r => ({ code: r.code, name: r.name, amount: -r.balance }));
     const plToDate = tb.rows.filter(r => isPL(r.type)).reduce((s, r) => s - r.balance, 0);
     const tFixed = fixed.reduce((s, r) => s + r.amount, 0);
     const tCurrent = current.reduce((s, r) => s + r.amount, 0);

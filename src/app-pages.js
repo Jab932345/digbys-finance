@@ -538,8 +538,8 @@ PAGES.balance = function () {
     <tr class="group"><td colspan="2">Creditors: due within one year</td></tr>${rows(b.liabilities)}<tr class="sub"><td>Total creditors</td>${td$(b.totals.liabilities)}</tr>
     <tr class="sub"><td>Net current assets</td>${td$(b.totals.netCurrent)}</tr>
     <tr class="total"><td>Net assets</td>${td$(b.totals.netAssets)}</tr>
-    <tr class="group"><td colspan="2">Capital and reserves</td></tr>${rows(b.equity)}<tr><td>Profit and loss account</td>${td$(b.profitToDate)}</tr>
-    <tr class="total"><td>Shareholders' funds</td>${td$(b.totals.equity)}</tr>
+    <tr class="group"><td colspan="2">${isLtd() ? 'Capital and reserves' : "Owner's capital"}</td></tr>${rows(b.equity)}<tr><td>${isLtd() ? 'Profit and loss account' : 'Profit for the period'}</td>${td$(b.profitToDate)}</tr>
+    <tr class="total"><td>${isLtd() ? "Shareholders' funds" : "Total owner's capital"}</td>${td$(b.totals.equity)}</tr>
   </tbody></table></div></section></div>`;
 };
 PAGES.tb = function () {

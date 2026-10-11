@@ -47,9 +47,10 @@ function exportFiles(per) {
   add('profit_and_loss.csv', 'Profit and loss with a column per division', [{ h: 'account_code', v: 'code' }, { h: 'line', v: 'label' }].concat(pcols.map(c => ({ h: c === 'none' ? 'unallocated' : c, v: c }))).concat([{ h: 'total', v: 'total' }]), prows);
 
   const b = E.balanceSheet(S, { at });
-  const brows = [].concat(b.fixed.map(r => ['Fixed assets', r]), b.current.map(r => ['Current assets', r]), b.liabilities.map(r => ['Creditors within one year', r]), b.equity.map(r => ['Capital and reserves', r]), [['Capital and reserves', { code: '', name: 'Profit and loss account', amount: b.profitToDate }]]);
+  const capSec = isLtd() ? 'Capital and reserves' : "Owner's capital"; const capTot = isLtd() ? "Shareholders' funds" : "Total owner's capital";
+  const brows = [].concat(b.fixed.map(r => ['Fixed assets', r]), b.current.map(r => ['Current assets', r]), b.liabilities.map(r => ['Creditors within one year', r]), b.equity.map(r => [capSec, r]), [[capSec, { code: '', name: isLtd() ? 'Profit and loss account' : 'Profit for the period', amount: b.profitToDate }]]);
   add('balance_sheet.csv', `Balance sheet at ${at}`, [{ h: 'section', v: r => r[0] }, { h: 'account_code', v: r => r[1].code }, { h: 'account_name', v: r => r[1].name }, { h: 'amount', v: r => dec(r[1].amount) }],
-    brows.concat([['Net assets', { code: '', name: 'Net assets', amount: b.totals.netAssets }], ["Shareholders' funds", { code: '', name: "Shareholders' funds", amount: b.totals.equity }]]));
+    brows.concat([['Net assets', { code: '', name: 'Net assets', amount: b.totals.netAssets }], [capTot, { code: '', name: capTot, amount: b.totals.equity }]]));
 
   if (S.company.vatRegistered) {
     const periods = E.vatPeriods(S.company, at).filter(x => x.to >= per.from && x.from <= per.to);
@@ -81,7 +82,8 @@ function exportFiles(per) {
   add('mileage.csv', 'Business journeys at HMRC approved mileage rates', [{ h: 'date', v: 'date' }, { h: 'driver', v: 'driver' }, { h: 'from', v: 'from' }, { h: 'to', v: 'to' }, { h: 'purpose', v: 'purpose' }, { h: 'miles', v: 'miles' }, { h: 'passengers', v: r => r.passengers || 0 }, { h: 'rate_band', v: 'rate' }, { h: 'claim', v: r => dec(r.claimP) }, { h: 'job_code', v: r => r.jobCode || '' }, { h: 'recorded_by', v: 'method' }, { h: 'posted_transaction', v: r => r.claimTxnId || '' }], mRows);
 
   const dRows = []; (S.company.directors || []).forEach(d => E.dla(S, d.dla).lines.filter(r => E.inRange(r.date, per.from, per.to)).forEach(r => dRows.push(Object.assign({ director: d.name }, r))));
-  add('directors_loans.csv', "Director's loan account movements (positive balance = company owes the director)", [{ h: 'director', v: 'director' }, { h: 'date', v: 'date' }, { h: 'reference', v: 'ref' }, { h: 'description', v: 'desc' }, { h: 'owed_to_director', v: r => dec(r.credit) }, { h: 'owed_to_company', v: r => dec(r.debit) }, { h: 'balance', v: r => dec(r.balance) }], dRows);
+  if (isLtd()) add('directors_loans.csv', "Director's loan account movements (positive balance = company owes the director)", [{ h: 'director', v: 'director' }, { h: 'date', v: 'date' }, { h: 'reference', v: 'ref' }, { h: 'description', v: 'desc' }, { h: 'owed_to_director', v: r => dec(r.credit) }, { h: 'owed_to_company', v: r => dec(r.debit) }, { h: 'balance', v: r => dec(r.balance) }], dRows);
+  else add('owner_capital_account.csv', "Owner's capital account: money the owner put in and took out (drawings). Capital, not a liability.", [{ h: 'owner', v: 'director' }, { h: 'date', v: 'date' }, { h: 'reference', v: 'ref' }, { h: 'description', v: 'desc' }, { h: 'put_in', v: r => dec(r.credit) }, { h: 'drawn', v: r => dec(r.debit) }, { h: 'balance', v: r => dec(r.balance) }], dRows.filter(r => r.director === ((S.company.directors || [])[0] || {}).name));
 
   add('job_profitability.csv', 'Sales, direct costs and mileage per job code', [{ h: 'job_code', v: 'code' }, { h: 'name', v: 'name' }, { h: 'division', v: r => r.division || '' }, { h: 'event_date', v: r => r.eventDate || '' }, { h: 'sales', v: r => dec(jobFigures(r.code).rev) }, { h: 'direct_costs', v: r => dec(jobFigures(r.code).cost) }, { h: 'mileage_cost', v: r => dec(jobFigures(r.code).mileCost) }, { h: 'profit', v: r => dec(jobFigures(r.code).profit) }], S.jobCodes || []);
 
@@ -94,11 +96,17 @@ function readme(per, files) {
   const c = S.company;
   return [
     `${c.name} — accounting export`,
-    `Company number ${c.companyNo || '—'} · UTR ${c.utr || '—'} · ${c.vatRegistered ? 'VAT ' + c.vatNumber + ' (' + (c.vatScheme || 'standard') + ' scheme, stagger ' + (c.vatStagger || 1) + ')' : 'Not VAT registered'}`,
+    isLtd() ? `Company number ${c.companyNo || '—'} · UTR ${c.utr || '—'} · ${c.vatRegistered ? 'VAT ' + c.vatNumber + ' (' + (c.vatScheme || 'standard') + ' scheme, stagger ' + (c.vatStagger || 1) + ')' : 'Not VAT registered'}`
+      : `Sole trader: ${c.ownerName || 'owner'}, trading as ${c.tradingName || c.name} · books start ${c.booksStart || '—'} · UTR ${c.utr || '—'} · ${c.vatRegistered ? 'VAT registered' : 'Not VAT registered'}`,
     `Period ${per.from} to ${per.to} · financial year end ${c.yearEnd || '03-31'} · produced ${new Date().toISOString()} by ${store.user.email}`,
     `Period lock date: ${c.lockDate || 'none'}`, '',
     'Conventions',
-    '- Accruals basis, double entry. general_ledger.csv balances: total debits equal total credits.',
+    ...(isLtd() ? ['- Accruals basis, double entry. general_ledger.csv balances: total debits equal total credits.'] : [
+      '- Double entry. general_ledger.csv balances: total debits equal total credits.',
+      '- Income is recorded when received and costs when paid, except where a sales invoice or supplier bill was entered (none in this period unless listed in sales_invoices.csv or bills.csv).',
+      '- Equipment is held at cost on the fixed asset accounts (0010 to 0030) and not depreciated, so either the cash basis or capital allowances can be applied.',
+      "- 2300 Owner's capital account holds money the owner put in and drew out. It is capital, not a liability. 3100 is the Starling balance brought forward at the books start date.",
+      '- The bank feed is the Starling business account. Costs paid from personal accounts are not included unless entered as a journal to 2300.']),
     '- Dates are ISO 8601 (YYYY-MM-DD). Amounts are GBP to two decimal places, no currency symbol; credits are positive in the credit column.',
     '- Every line carries a division (events, pies, butchery, hire, or blank for central overheads) and, where relevant, a job code.',
     '- VAT codes: S20 standard 20%, R5 reduced 5%, Z0 zero-rated, EX exempt, NV no VAT charged by supplier, OS outside the scope, NR before VAT registration.',
