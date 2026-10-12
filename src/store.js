@@ -81,6 +81,13 @@
       mode: 'live', sb, user: null,
       async session() { const { data } = await sb.auth.getSession(); return data.session; },
       async signIn(email, password) { const { error } = await sb.auth.signInWithPassword({ email, password }); if (error) throw error; },
+      // Self-service login for people the owner has added under Settings → Users. Signing up grants nothing on its own:
+      // every read is gated by co_users, so an address that is not listed sees the "not been given access" message.
+      async signUp(email, password) {
+        const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } });
+        if (error) throw new Error(/already registered|already exists/i.test(error.message) ? 'That email already has a login. Go back and sign in, or use the emailed sign-in link.' : error.message);
+        return data;
+      },
       async sendLink(email) { const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: false } }); if (error) throw error; },
       async signOut() { await sb.auth.signOut(); location.reload(); },
       async init() {

@@ -132,9 +132,35 @@ function loginScreen(msg) {
     ${field('Password', '<input class="input" id="lg-pass" type="password" autocomplete="current-password">')}
     <button class="btn primary" type="submit" style="height:40px">Sign in</button>
     <button class="btn plain" type="button" id="lg-link">Email me a sign-in link instead</button>
+    <button class="btn plain" type="button" id="lg-new">First time here? Create your login</button>
     <p class="faint" style="margin:0;font-size:12.5px">Use the same email and password as the Digby's staff app. Only people the owner has given access can sign in.</p></form></div>`;
   $('#login').addEventListener('submit', (e) => { e.preventDefault(); run(async () => { await store.signIn($('#lg-email').value.trim(), $('#lg-pass').value); await start(); }); });
   $('#lg-link').addEventListener('click', () => run(async () => { const em = $('#lg-email').value.trim(); if (!em) throw new Error('Enter your email first.'); await store.sendLink(em); toast('Check your email for the sign-in link'); }));
+  $('#lg-new').addEventListener('click', () => signupScreen($('#lg-email').value.trim()));
+}
+function signupScreen(email, msg) {
+  $('#root').innerHTML = `<div class="login"><form class="login-card" id="signup">
+    <div class="brand" style="padding:0"><div class="brand-mark">D</div><div><div class="brand-name">Digby's</div><div class="brand-sub">Accounts</div></div></div>
+    <h1>Create your login</h1>${msg ? callout('bad', esc(msg)) : ''}
+    <p class="muted" style="margin:0;font-size:13.5px">Use the email address the owner gave access to. Choose a password of at least 8 characters.</p>
+    ${field('Email', `<input class="input" id="su-email" type="email" autocomplete="username" required value="${esc(email || '')}">`)}
+    ${field('Choose a password', '<input class="input" id="su-pass" type="password" autocomplete="new-password" minlength="8" required>')}
+    ${field('Password again', '<input class="input" id="su-pass2" type="password" autocomplete="new-password" minlength="8" required>')}
+    <button class="btn primary" type="submit" style="height:40px">Create login</button>
+    <button class="btn plain" type="button" id="su-back">Back to sign in</button></form></div>`;
+  $('#su-back').addEventListener('click', () => loginScreen());
+  $('#signup').addEventListener('submit', (e) => { e.preventDefault(); run(async () => {
+    const em = $('#su-email').value.trim().toLowerCase(), pw = $('#su-pass').value;
+    if (!/^\S+@\S+\.\S+$/.test(em)) throw new Error('Enter a valid email address.');
+    if (pw.length < 8) throw new Error('Use at least 8 characters for the password.');
+    if (pw !== $('#su-pass2').value) throw new Error('The two passwords do not match.');
+    const r = await store.signUp(em, pw);
+    if (r && r.session) return start();
+    $('#root').innerHTML = `<div class="login"><div class="login-card"><div class="brand" style="padding:0"><div class="brand-mark">D</div><div><div class="brand-name">Digby's</div><div class="brand-sub">Accounts</div></div></div>
+      <h1>Check your email</h1><p style="margin:0">We've sent a confirmation link to <strong>${esc(em)}</strong>. Click it, then come back here and sign in with your email and the password you chose.</p>
+      <button class="btn primary" id="su-done" style="height:40px">Back to sign in</button></div></div>`;
+    $('#su-done').addEventListener('click', () => loginScreen());
+  }); });
 }
 async function start() {
   $('#root').innerHTML = `<div class="login"><div class="muted">Loading the books…</div></div>`;
