@@ -1015,7 +1015,7 @@ table.t td.wrap { white-space: normal; min-width: 180px; }
         const names = Object.keys(ENTITIES);
         const results = await Promise.all(names.map(n => read(ENTITIES[n].table)));
         state = {};
-        names.forEach((n, i) => { state[n] = results[i].map(r => Object.assign({}, r.data || {}, { [ENTITIES[n].key]: r[ENTITIES[n].key] })); });
+        names.forEach((n, i) => { state[n] = results[i].map(r => Object.assign(n === 'users' ? { name: r.name || undefined, role: r.role } : {}, r.data || {}, { [ENTITIES[n].key]: r[ENTITIES[n].key] })); });
         const settings = await read('co_settings');
         state.company = ((settings.find(r => r.id === 'company') || {}).data) || {};
         const { data: aud } = await sb.from('co_audit').select('*').order('ts', { ascending: false }).limit(1000);
